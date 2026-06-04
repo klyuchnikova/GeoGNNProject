@@ -72,11 +72,11 @@ class Setting:
     def parse_arguments(self, parser):
         # training
         parser.add_argument('--gpu', default=0, type=int, help='the gpu to use')  # -1
-        parser.add_argument('--hidden-dim', default=10, type=int, help='hidden dimensions to use')  # 10
+        parser.add_argument('--hidden-dim', default=32, type=int, help='hidden dimensions to use')
         parser.add_argument('--weight_decay', default=0, type=float, help='weight decay regularization')
-        parser.add_argument('--lr', default=0.01, type=float, help='learning rate')  # 0.01
+        parser.add_argument('--lr', default=0.003, type=float, help='learning rate')
         parser.add_argument('--epochs', default=100, type=int, help='amount of epochs')  # 100
-        parser.add_argument('--rnn', default='rnn', type=str, help='the GRU implementation to use: [rnn|gru|lstm]')
+        parser.add_argument('--rnn', default='gru', type=str, help='the recurrent implementation to use: [rnn|gru|lstm]')
 
         # data management
         parser.add_argument('--dataset', default='checkins-gowalla.txt', type=str,

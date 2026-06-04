@@ -5,6 +5,16 @@ large Gowalla data, generated graphs, and logs are produced inside Kaggle.
 
 ## 1. Clone This Branch
 
+Kaggle notebook cell:
+
+```python
+!git clone -b flashback-branch https://github.com/klyuchnikova/GeoGNNProject.git
+%cd GeoGNNProject
+!pip install -q -r flashback/requirements.txt
+```
+
+Bash cell or terminal:
+
 ```bash
 git clone -b flashback-branch https://github.com/klyuchnikova/GeoGNNProject.git
 cd GeoGNNProject
@@ -12,7 +22,8 @@ pip install -q -r flashback/requirements.txt
 ```
 
 If the repository is private or Kaggle internet is disabled, upload the repo as
-a Kaggle dataset or use the Kaggle Git integration, then `cd` into the project.
+a Kaggle dataset or use the Kaggle Git integration, then move into the project
+with `%cd GeoGNNProject` in a notebook cell.
 
 ## 2. Get Gowalla SNAP Check-ins
 
@@ -71,7 +82,11 @@ python scripts/prepare_gowalla_city.py \
 ## 4. Build Graphs Required by Flashback
 
 This branch includes a lightweight graph builder so the model can run without
-pretrained KGE artifacts:
+pretrained KGE artifacts. It now builds three graphs:
+
+- temporal POI transition graph from train trajectories;
+- user-location interaction graph from train visits;
+- spatial POI graph from nearby POIs in the city bbox.
 
 ```bash
 python flashback/build_graphs.py \
@@ -80,7 +95,9 @@ python flashback/build_graphs.py \
   --dataset-name gowalla_austin \
   --min-checkins 101 \
   --transition-topk 100 \
-  --user-loc-topk 100
+  --user-loc-topk 100 \
+  --spatial-topk 50 \
+  --spatial-radius-km 3.0
 ```
 
 It produces:
@@ -88,9 +105,22 @@ It produces:
 ```text
 data/graphs/gowalla_austin_transition_top100.pkl
 data/graphs/gowalla_austin_user_loc_top100.pkl
+data/graphs/gowalla_austin_spatial_top50.pkl
 ```
 
-## 5. Smoke Test
+## 5. Popularity Baseline
+
+Run this before model training. It gives a sanity baseline with the same
+`Acc@k`, `MAP@k`, and `MRR` metrics as Flashback:
+
+```bash
+python flashback/popularity_baseline.py \
+  --dataset data/checkins-gowalla-austin.txt \
+  --min-checkins 101 \
+  --batch-size 200
+```
+
+## 6. Smoke Test
 
 Use this first to verify the Kaggle environment:
 
@@ -105,17 +135,22 @@ python flashback/train.py \
   --gpu -1
 ```
 
-## 6. GPU Training
+## 7. Improved GPU Training
 
 ```bash
 python flashback/train.py \
   --dataset data/checkins-gowalla-austin.txt \
   --trans_loc_file data/graphs/gowalla_austin_transition_top100.pkl \
   --trans_interact_file data/graphs/gowalla_austin_user_loc_top100.pkl \
-  --log_file results/flashback_austin \
-  --epochs 100 \
+  --trans_loc_spatial_file data/graphs/gowalla_austin_spatial_top50.pkl \
+  --use_spatial_graph \
+  --log_file results/flashback_austin_gru_h32_lr003_spatial \
+  --epochs 10 \
   --batch-size 200 \
-  --validate-epoch 5 \
+  --validate-epoch 1 \
+  --rnn gru \
+  --hidden-dim 32 \
+  --lr 0.003 \
   --gpu 0
 ```
 
@@ -129,6 +164,47 @@ MAP@5
 MAP@10
 MRR
 ```
+
+You can also run the baseline, graph build, and improved training together:
+
+```bash
+bash scripts/run_flashback_austin_improved.sh
+```
+
+## 8. Original KGE Graph Mode
+
+The closest reproduction of the KDD Graph-Flashback setup uses graph files
+generated from pretrained KGE/TransE embeddings, for example:
+
+```text
+gowalla_scheme2_transe_loc_temporal_100.pkl
+gowalla_scheme2_transe_user-loc_100.pkl
+```
+
+Those files must be built for the same check-in file and the same remapped
+user/POI ids as the training data. Do not mix full-Gowalla KGE graphs with the
+Austin subset generated here, because this branch remaps Austin POIs to a new
+compact id space.
+
+If you use the original Graph-Flashback Google Drive artifacts, also use the
+matching original `checkins-gowalla.txt` preprocessing from that repository:
+
+```bash
+python flashback/train.py \
+  --dataset data/checkins-gowalla.txt \
+  --trans_loc_file KGE/Graphs/gowalla_scheme2_transe_loc_temporal_100.pkl \
+  --trans_interact_file KGE/Graphs/gowalla_scheme2_transe_user-loc_100.pkl \
+  --log_file results/flashback_gowalla_original_kge \
+  --epochs 100 \
+  --batch-size 200 \
+  --validate-epoch 5 \
+  --rnn gru \
+  --hidden-dim 32 \
+  --gpu 0
+```
+
+For a city-level KGE experiment, generate triplets and train KGE on the same
+city subset first, then construct graph `.pkl` files from those embeddings.
 
 ## Notes
 

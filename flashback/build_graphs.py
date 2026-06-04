@@ -3,6 +3,7 @@ import os
 import pickle
 
 import numpy as np
+from scipy.spatial import cKDTree
 from scipy.sparse import lil_matrix
 
 from dataloader import PoiDataloader
@@ -51,6 +52,39 @@ def build_user_loc_graph(locs, user_count, loc_count, train_ratio, topk):
     return normalize_topk_rows(graph, topk)
 
 
+def build_spatial_graph(poi2gps, loc_count, radius_km, topk):
+    coords = np.array([poi2gps[i] for i in range(loc_count)], dtype=np.float64)
+    lat = coords[:, 0]
+    lng = coords[:, 1]
+
+    mean_lat_rad = np.deg2rad(np.mean(lat))
+    xy_km = np.column_stack([
+        lng * np.cos(mean_lat_rad) * 111.320,
+        lat * 110.574,
+    ])
+
+    tree = cKDTree(xy_km)
+    graph = lil_matrix((loc_count, loc_count), dtype=np.float32)
+
+    for src in range(loc_count):
+        neighbors = tree.query_ball_point(xy_km[src], r=radius_km)
+        neighbors = [dst for dst in neighbors if dst != src]
+        if not neighbors:
+            continue
+
+        distances = np.linalg.norm(xy_km[neighbors] - xy_km[src], axis=1)
+        order = np.argsort(distances)
+        if topk > 0:
+            order = order[:topk]
+
+        for idx in order:
+            dst = neighbors[int(idx)]
+            dist = max(float(distances[int(idx)]), 1e-6)
+            graph[src, dst] = np.exp(-dist / radius_km)
+
+    return normalize_topk_rows(graph, topk)
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="data/checkins-gowalla-austin.txt")
@@ -61,6 +95,9 @@ def parse_args():
     parser.add_argument("--train-ratio", default=0.8, type=float)
     parser.add_argument("--transition-topk", default=100, type=int)
     parser.add_argument("--user-loc-topk", default=100, type=int)
+    parser.add_argument("--spatial-topk", default=50, type=int)
+    parser.add_argument("--spatial-radius-km", default=3.0, type=float)
+    parser.add_argument("--no-spatial", action="store_true", help="skip spatial POI graph construction")
     return parser.parse_args()
 
 
@@ -90,17 +127,31 @@ def main():
         train_ratio=args.train_ratio,
         topk=args.user_loc_topk,
     )
+    spatial_graph = None
+    if not args.no_spatial:
+        spatial_graph = build_spatial_graph(
+            loader.poi2gps,
+            loc_count=loc_count,
+            radius_km=args.spatial_radius_km,
+            topk=args.spatial_topk,
+        )
 
     transition_path = os.path.join(args.output_dir, f"{args.dataset_name}_transition_top{args.transition_topk}.pkl")
     user_loc_path = os.path.join(args.output_dir, f"{args.dataset_name}_user_loc_top{args.user_loc_topk}.pkl")
+    spatial_path = os.path.join(args.output_dir, f"{args.dataset_name}_spatial_top{args.spatial_topk}.pkl")
 
     with open(transition_path, "wb") as f:
         pickle.dump(transition_graph, f, protocol=2)
     with open(user_loc_path, "wb") as f:
         pickle.dump(user_loc_graph, f, protocol=2)
+    if spatial_graph is not None:
+        with open(spatial_path, "wb") as f:
+            pickle.dump(spatial_graph, f, protocol=2)
 
     print("Saved transition graph:", transition_path)
     print("Saved user-location graph:", user_loc_path)
+    if spatial_graph is not None:
+        print("Saved spatial graph:", spatial_path)
 
 
 if __name__ == "__main__":
