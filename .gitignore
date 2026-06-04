@@ -78,6 +78,15 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# Generated data/model artifacts
+data/
+outputs/
+results/
+flashback/results/
+flashback/data/
+*.pkl
+*.ckpt
+
 # IPython
 profile_default/
 ipython_config.py
