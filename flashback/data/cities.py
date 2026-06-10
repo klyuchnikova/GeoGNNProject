@@ -92,7 +92,7 @@ def rank_cities(
             "score": float(score),
         })
     result = pd.DataFrame(rows).sort_values(
-        ["eligible_users", "eligible_checkins", "pois", "score"], ascending=False
+        ["score", "eligible_users", "eligible_checkins", "pois"], ascending=False
     ).reset_index(drop=True)
     result["rank"] = np.arange(1, len(result) + 1)
     return result

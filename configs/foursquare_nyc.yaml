@@ -4,17 +4,59 @@ data:
   raw_friendships: null
   raw_metadata: null
   city: all
+  candidate_cities: []
   min_checkins: 101
-  min_poi_visits: 3
+  min_poi_visits: 1
   sequence_length: 20
   sequence_stride: 20
+  split_mode: robust
   train_ratio: 0.70
   val_ratio: 0.10
   test_ratio: 0.20
   output_dir: data/processed
-stkg: {spatial_radius_km: 3.0, spatial_topk: 50, include_friendship: false, output_dir: data/kge}
-kge: {embedding_dim: 64, margin: 1.0, learning_rate: 0.001, batch_size: 4096, epochs: 50, patience: 8, checkpoint: data/kge/transe_best.pt, device: auto}
-graphs: {transition_topk: 20, user_poi_topk: 100, friend_topk: 20, score_chunk_size: 1024, output_dir: data/graphs}
-model: {rnn: gru, hidden_dim: 64, lambda_t: 0.1, lambda_s: 0.2, use_spatial_graph: true, use_friend_graph: false, coordinate_distance: haversine_km, dropout: 0.1}
-train: {batch_size: 64, epochs: 50, learning_rate: 0.001, patience: 8, seed: 42, device: auto, checkpoint_dir: checkpoints, run_name: foursquare_nyc_graph_flashback}
+stkg:
+  spatial_mode: rank
+  spatial_topk: 50
+  spatial_symmetric: true
+  include_friendship: false
+  output_dir: data/kge
+kge:
+  embedding_dim: 100
+  margin: 1.0
+  p_norm: 1
+  learning_rate: 0.001
+  batch_size: 4096
+  epochs: 100
+  patience: 15
+  checkpoint: data/kge/transe_best.pt
+  device: auto
+graphs:
+  transition_topk: 20
+  user_poi_topk: 100
+  score_chunk_size: 1024
+  output_dir: data/graphs
+model:
+  rnn: rnn
+  hidden_dim: 10
+  lambda_t: 0.1
+  lambda_s: 1000.0
+  use_spatial_graph: false
+  use_friend_graph: false
+  graph_weight_projection: false
+  coordinate_distance: euclidean_degrees
+  dropout: 0.0
+train:
+  batch_size: 200
+  epochs: 100
+  learning_rate: 0.01
+  weight_decay: 0.0
+  patience: 20
+  seed: 42
+  device: auto
+  checkpoint_dir: checkpoints
+  run_name: foursquare_nyc_graph_flashback
+  checkpoint_metric: MRR
+  checkpoint_mode: max
+  scheduler_milestones: [20, 40, 60, 80]
+  scheduler_gamma: 0.2
 artifacts_dir: artifacts

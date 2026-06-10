@@ -14,9 +14,49 @@ data:
   val_ratio: 0.2
   test_ratio: 0.2
   output_dir: data/synthetic/processed
-stkg: {spatial_radius_km: 10.0, spatial_topk: 5, include_friendship: true, output_dir: data/synthetic/kge}
-kge: {embedding_dim: 8, margin: 1.0, learning_rate: 0.01, batch_size: 32, epochs: 2, patience: 2, checkpoint: data/synthetic/kge/transe_best.pt, device: cpu}
-graphs: {transition_topk: 5, user_poi_topk: 5, friend_topk: 3, score_chunk_size: 32, output_dir: data/synthetic/graphs}
-model: {rnn: gru, hidden_dim: 8, lambda_t: 0.1, lambda_s: 0.2, use_spatial_graph: true, use_friend_graph: true, coordinate_distance: haversine_km, dropout: 0.0}
-train: {batch_size: 4, epochs: 2, learning_rate: 0.01, patience: 2, seed: 42, device: cpu, checkpoint_dir: data/synthetic/checkpoints, run_name: smoke}
+stkg:
+  spatial_mode: rank
+  spatial_topk: 5
+  spatial_symmetric: true
+  include_friendship: true
+  output_dir: data/synthetic/kge
+kge:
+  embedding_dim: 8
+  margin: 1.0
+  p_norm: 1
+  learning_rate: 0.01
+  batch_size: 32
+  epochs: 2
+  patience: 2
+  checkpoint: data/synthetic/kge/transe_best.pt
+  device: cpu
+graphs:
+  transition_topk: 5
+  user_poi_topk: 5
+  friend_topk: 3
+  score_chunk_size: 32
+  output_dir: data/synthetic/graphs
+model:
+  rnn: gru
+  hidden_dim: 8
+  lambda_t: 0.1
+  lambda_s: 0.2
+  use_spatial_graph: true
+  use_friend_graph: true
+  graph_weight_projection: true
+  coordinate_distance: haversine_km
+  dropout: 0.0
+train:
+  batch_size: 4
+  epochs: 2
+  learning_rate: 0.01
+  patience: 2
+  seed: 42
+  device: cpu
+  checkpoint_dir: data/synthetic/checkpoints
+  run_name: smoke
+  checkpoint_metric: MRR
+  checkpoint_mode: max
+  scheduler_milestones: [1]
+  scheduler_gamma: 0.5
 artifacts_dir: data/synthetic/artifacts

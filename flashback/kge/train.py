@@ -36,7 +36,7 @@ def train_transe(cfg: ExperimentConfig) -> Path:
     tr = torch.from_numpy(np.load(out/"triplets_train.npy")).long()
     va = torch.from_numpy(np.load(out/"triplets_validation.npy")).long()
     device = resolve_device(cfg.kge.device)
-    model = TransE(meta["n_entities"], meta["n_relations"], cfg.kge.embedding_dim).to(device)
+    model = TransE(meta["n_entities"], meta["n_relations"], cfg.kge.embedding_dim, cfg.kge.p_norm).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.kge.learning_rate)
     loader = DataLoader(TensorDataset(tr), batch_size=cfg.kge.batch_size, shuffle=True)
     va_device = va.to(device)
@@ -61,7 +61,7 @@ def train_transe(cfg: ExperimentConfig) -> Path:
         row={"epoch":epoch,"train_loss":total/max(1,n),"validation_loss":val}; history.append(row)
         if val < best-1e-6:
             best=val; bad=0
-            torch.save({"state_dict":model.state_dict(),"meta":meta,"dim":cfg.kge.embedding_dim,"epoch":epoch,"config":cfg.to_dict()}, ckpt)
+            torch.save({"state_dict":model.state_dict(),"meta":meta,"dim":cfg.kge.embedding_dim,"p_norm":cfg.kge.p_norm,"epoch":epoch,"config":cfg.to_dict()}, ckpt)
         else:
             bad += 1
             if bad >= cfg.kge.patience: break

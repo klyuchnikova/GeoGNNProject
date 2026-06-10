@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
-import copy
 import json
-import random
 import os
+import random
 
 import numpy as np
 import torch
@@ -21,10 +20,13 @@ class DataConfig:
     raw_metadata: str | None = "data/raw/gowalla_spots_subset1.csv"
     city: str = "auto"
     candidate_cities: list[str] = field(default_factory=lambda: [
-        "new_york", "los_angeles", "chicago", "san_francisco", "austin", "dallas", "seattle", "boston"
+        "new_york", "los_angeles", "chicago", "san_francisco",
+        "austin", "dallas", "seattle", "boston",
     ])
     min_checkins: int = 101
-    min_poi_visits: int = 3
+    # Keep 1 for the paper-compatible pipeline. Filtering POIs with counts from
+    # the complete timeline would leak validation/test information.
+    min_poi_visits: int = 1
     max_users: int = 0
     sequence_length: int = 20
     sequence_stride: int = 20
@@ -37,8 +39,12 @@ class DataConfig:
 
 @dataclass
 class STKGConfig:
-    spatial_radius_km: float = 3.0
+    # Rank-based spatial relation: each POI is connected to its k nearest POIs.
+    spatial_mode: str = "rank"
     spatial_topk: int = 50
+    spatial_symmetric: bool = True
+    # Radius is retained only for optional diagnostics/backward compatibility.
+    spatial_radius_km: float = 3.0
     max_spatial_pairs: int = 2_000_000
     include_friendship: bool = True
     deduplicate_triplets: bool = True
@@ -47,15 +53,16 @@ class STKGConfig:
 
 @dataclass
 class KGEConfig:
-    embedding_dim: int = 64
+    embedding_dim: int = 100
     margin: float = 1.0
+    p_norm: int = 1
     learning_rate: float = 0.001
     batch_size: int = 4096
-    epochs: int = 50
+    epochs: int = 100
     negative_samples: int = 1
     corrupt_head_probability: float = 0.5
     validation_fraction: float = 0.02
-    patience: int = 8
+    patience: int = 15
     checkpoint: str = "data/kge/transe_best.pt"
     device: str = "auto"
 
@@ -71,32 +78,39 @@ class GraphConfig:
 
 @dataclass
 class ModelConfig:
-    rnn: str = "gru"
-    hidden_dim: int = 64
+    # These defaults follow the original Graph-Flashback Gowalla setup.
+    rnn: str = "rnn"
+    hidden_dim: int = 10
     lambda_t: float = 0.1
     lambda_s: float = 1000.0
     lambda_loc: float = 1.0
     lambda_user: float = 1.0
-    use_spatial_graph: bool = True
-    use_friend_graph: bool = True
-    graph_weight_projection: bool = True
+    # Spatial/friend relations remain inside STKG/TransE, but their additional
+    # GCN branches are disabled in the main reproduction configuration.
+    use_spatial_graph: bool = False
+    use_friend_graph: bool = False
+    graph_weight_projection: bool = False
     coordinate_distance: str = "euclidean_degrees"
-    dropout: float = 0.1
+    dropout: float = 0.0
 
 
 @dataclass
 class TrainConfig:
-    batch_size: int = 64
-    epochs: int = 50
-    learning_rate: float = 0.001
-    weight_decay: float = 1e-5
+    batch_size: int = 200
+    epochs: int = 100
+    learning_rate: float = 0.01
+    weight_decay: float = 0.0
     gradient_clip: float = 5.0
-    patience: int = 8
+    patience: int = 20
     num_workers: int = 0
     seed: int = 42
     device: str = "auto"
     checkpoint_dir: str = "checkpoints"
     run_name: str = "graph_flashback"
+    checkpoint_metric: str = "MRR"
+    checkpoint_mode: str = "max"
+    scheduler_milestones: list[int] = field(default_factory=lambda: [20, 40, 60, 80])
+    scheduler_gamma: float = 0.2
     evaluate_test_after_training: bool = True
 
 
@@ -147,6 +161,8 @@ def validate_config(cfg: ExperimentConfig) -> None:
         raise ValueError("data.dataset must be 'gowalla' or 'foursquare'")
     if cfg.data.sequence_length < 2:
         raise ValueError("sequence_length must be >= 2")
+    if cfg.data.sequence_stride < 1:
+        raise ValueError("sequence_stride must be >= 1")
     if cfg.data.split_mode == "paper":
         cfg.data.train_ratio, cfg.data.val_ratio, cfg.data.test_ratio = 0.8, 0.0, 0.2
     total = cfg.data.train_ratio + cfg.data.val_ratio + cfg.data.test_ratio
@@ -154,6 +170,18 @@ def validate_config(cfg: ExperimentConfig) -> None:
         raise ValueError(f"split ratios must sum to one, got {total}")
     if cfg.model.rnn not in {"rnn", "gru", "lstm"}:
         raise ValueError("model.rnn must be rnn/gru/lstm")
+    if cfg.model.coordinate_distance not in {"euclidean_degrees", "haversine_km"}:
+        raise ValueError("coordinate_distance must be euclidean_degrees or haversine_km")
+    if cfg.stkg.spatial_mode not in {"rank", "radius"}:
+        raise ValueError("stkg.spatial_mode must be rank or radius")
+    if cfg.kge.p_norm not in {1, 2}:
+        raise ValueError("kge.p_norm must be 1 or 2")
+    if cfg.train.checkpoint_mode not in {"min", "max"}:
+        raise ValueError("checkpoint_mode must be min or max")
+    if cfg.data.val_ratio == 0 and cfg.train.checkpoint_metric not in {"train_loss", "final_epoch"}:
+        # A paper-mode run must not choose checkpoints on the test set.
+        cfg.train.checkpoint_metric = "final_epoch"
+        cfg.train.checkpoint_mode = "max"
 
 
 def resolve_device(name: str) -> torch.device:
@@ -174,6 +202,7 @@ def seed_everything(seed: int) -> None:
         torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    # Full deterministic mode can make sparse CUDA operations unavailable.
     torch.use_deterministic_algorithms(False)
 
 
