@@ -1,5 +1,7 @@
 data:
   dataset: gowalla
+  input_format: snap
+  preselected_city: false
   raw_checkins: data/synthetic/checkins.tsv
   raw_friendships: data/synthetic/friends.tsv
   raw_metadata: null
@@ -7,16 +9,15 @@ data:
   candidate_cities: []
   min_checkins: 12
   min_poi_visits: 1
-  max_users: 8
   sequence_length: 4
   sequence_stride: 1
   sequence_mode: window_last
+  split_mode: robust
   train_ratio: 0.6
   val_ratio: 0.2
   test_ratio: 0.2
   output_dir: data/synthetic/processed
-  input_format: snap
-  preselected_city: false
+  max_users: 8
 stkg:
   spatial_mode: radius
   spatial_topk: 5
@@ -28,19 +29,24 @@ kge:
   embedding_dim: 8
   margin: 1.0
   p_norm: 1
-  learning_rate: 0.01
+  learning_rate: 0.001
   batch_size: 32
   epochs: 2
   negative_samples: 2
   patience: 2
   sampling: relation_balanced
+  relation_weights:
+    visits: 0.4
+    temporal: 0.4
+    spatial: 0.2
+    friend: 0.0
   checkpoint: data/synthetic/kge/transe_best.pt
   device: cpu
 graphs:
   transition_topk: 5
   user_poi_topk: 5
-  friend_topk: 3
   score_chunk_size: 32
+  minimum_score: 0.0
   row_relative_scores: true
   output_dir: data/synthetic/graphs
 model:
@@ -49,6 +55,7 @@ model:
   lambda_t: 0.1
   lambda_s: 0.2
   learnable_decay: true
+  lambda_loc: 1.0
   use_transition_graph: true
   use_preference_graph: true
   use_spatial_graph: true
@@ -60,14 +67,14 @@ model:
   use_category_embedding: true
   use_time_embedding: true
   use_user_context: true
-  personal_prior_weight: 1.0
-  recent_prior_weight: 0.5
-  global_prior_weight: 0.1
-  geo_prior_weight: 0.2
-  category_transition_weight: 0.2
+  personal_prior_weight: 2.0
+  recent_prior_weight: 1.0
+  global_prior_weight: 0.25
+  geo_prior_weight: 1.0
+  category_transition_weight: 0.5
   personal_prior_topk: 10
-  recent_prior_tau: 3.0
-  geo_prior_scale_km: 10.0
+  recent_prior_tau: 5.0
+  geo_prior_scale_km: 5.0
   learnable_prior_weights: true
   use_repeat_gate: true
   bounded_residual_scale: 0.0
@@ -76,6 +83,8 @@ train:
   batch_size: 4
   epochs: 2
   learning_rate: 0.01
+  weight_decay: 0.0
+  gradient_clip: 5.0
   label_smoothing: 0.0
   bpr_weight: 0.1
   repeat_gate_weight: 0.1
@@ -90,4 +99,5 @@ train:
   scheduler_milestones:
   - 1
   scheduler_gamma: 0.5
+  evaluate_test_after_training: true
 artifacts_dir: data/synthetic/artifacts

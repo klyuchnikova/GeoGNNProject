@@ -8,8 +8,8 @@ from flashback.model.graph_flashback import GraphFlashback
 
 
 def test_faithful_and_tuned_protocols_are_separate():
-    faithful = load_config("configs/gowalla_faithful.yaml")
-    tuned = load_config("configs/gowalla_auto.yaml")
+    faithful = load_config("configs/austin_faithful.yaml")
+    tuned = load_config("configs/austin_tuned.yaml")
     assert faithful.model.rnn == "rnn"
     assert faithful.model.hidden_dim == 10
     assert faithful.data.sequence_mode == "block_all"

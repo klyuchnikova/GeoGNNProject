@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geognn-graph-flashback"
-version = "0.6.0"
-description = "Tuned and faithful Graph-Flashback pipelines for the portable Austin Gowalla dataset"
+version = "0.7.0"
+description = "Offline Austin Graph-Flashback experiment suite"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.26,<3", "pandas>=2.1,<4", "scipy>=1.11,<2",
