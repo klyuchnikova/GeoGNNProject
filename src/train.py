@@ -34,7 +34,7 @@ def load_dataframe(cfg: TrainConfig):
     if cfg.dataset == "foursquare":
         reader = FoursquareReader(cfg.data_root, city=cfg.city)
     elif cfg.dataset == "gowalla":
-        reader = GowallaReader(cfg.data_root)
+        reader = GowallaReader(cfg.data_root, city=cfg.city)
     else:
         raise ValueError(f"Unknown dataset: {cfg.dataset}")
     return reader.load()
@@ -127,57 +127,52 @@ def train_gugen(cfg: TrainConfig) -> dict:
     )
 
     logger.info("Starting training with config: %s", asdict(cfg))
-    train_loader, val_loader, test_loader, vocab, data_stats = build_dataloaders(
-        cfg, filter_cfg, logger
-    )
+    train_loader, val_loader, test_loader, vocab, data_stats = build_dataloaders(cfg, filter_cfg, logger)
 
     model = build_model(cfg, vocab).to(device)
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=cfg.lr,
-        weight_decay=cfg.weight_decay,
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, 
+        T_max=cfg.epochs,
+        eta_min=cfg.lr * cfg.lr_scheduler_factor
     )
 
     best_val_acc1 = -1.0
     best_epoch = -1
     best_val_metrics = {}
     best_test_metrics = {}
+    patience_counter = 0
 
     for epoch in range(1, cfg.epochs + 1):
         train_epoch(model, train_loader, optimizer, device, epoch, logger)
         val_metrics = validate_epoch(model, val_loader, device, epoch, logger, split="val")
+        scheduler.step()
+        current_lr = optimizer.param_groups[0]['lr']
+        logger.info(f"Epoch {epoch} - Learning rate: {current_lr:.6f}")
 
         if val_metrics["acc1"] > best_val_acc1:
             best_val_acc1 = val_metrics["acc1"]
             best_epoch = epoch
             best_val_metrics = val_metrics
-            best_test_metrics = validate_epoch(
-                model, test_loader, device, epoch, logger, split="test"
-            )
+            best_test_metrics = validate_epoch(model, test_loader, device, epoch, logger, split="test")
             save_checkpoint(
-                model,
-                optimizer,
-                epoch,
-                {"val": val_metrics, "test": best_test_metrics},
-                cfg,
-                checkpoint_dir / "best.pt",
+                model, optimizer, epoch, {"val": val_metrics, "test": best_test_metrics},
+                cfg, checkpoint_dir / f"best.pt"
             )
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= cfg.lr_scheduler_patience:
+                break
 
     if best_epoch < 0:
-        best_test_metrics = validate_epoch(
-            model, test_loader, device, cfg.epochs, logger, split="test"
-        )
-        best_val_metrics = validate_epoch(
-            model, val_loader, device, cfg.epochs, logger, split="val"
-        )
+        best_test_metrics = validate_epoch(model, test_loader, device, cfg.epochs, logger, split="test")
+        best_val_metrics = validate_epoch(model, val_loader, device, cfg.epochs, logger, split="val")
         best_epoch = cfg.epochs
         save_checkpoint(
-            model,
-            optimizer,
-            best_epoch,
-            {"val": best_val_metrics, "test": best_test_metrics},
-            cfg,
-            checkpoint_dir / "best.pt",
+            model, optimizer, best_epoch, {"val": best_val_metrics, "test": best_test_metrics},
+            cfg, checkpoint_dir / f"best.pt"
         )
 
     train_evaluator = Evaluator(model, device)
@@ -185,22 +180,12 @@ def train_gugen(cfg: TrainConfig) -> dict:
     logger.info("Final train metrics: %s", final_train_metrics)
 
     save_results(
-        cfg,
-        filter_cfg,
-        data_stats,
-        final_train_metrics,
-        best_val_metrics,
-        best_test_metrics,
-        best_epoch,
-        results_dir / "metrics.json",
+        cfg, filter_cfg, data_stats, final_train_metrics, best_val_metrics,
+        best_test_metrics, best_epoch, results_dir / f"metrics.json"
     )
     save_checkpoint(
-        model,
-        optimizer,
-        cfg.epochs,
-        {"val": best_val_metrics, "test": best_test_metrics},
-        cfg,
-        checkpoint_dir / "last.pt",
+        model, optimizer, cfg.epochs, {"val": best_val_metrics, "test": best_test_metrics},
+        cfg, checkpoint_dir / f"last.pt"
     )
 
     print("\nBest results")
@@ -212,7 +197,7 @@ def train_gugen(cfg: TrainConfig) -> dict:
 
 def parse_args() -> TrainConfig:
     parser = argparse.ArgumentParser(description="Train POI recommendation models")
-    parser.add_argument("--model", default="gugen", choices=["gugen"])
+    parser.add_argument("--model", default="gugen", choices=["gugen", "getnext"])
     parser.add_argument("--dataset", default="foursquare", choices=["foursquare", "gowalla"])
     parser.add_argument("--city", default="NYC")
     parser.add_argument("--data-root", default="../input")
@@ -221,6 +206,7 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=0.0001)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--num-heads", type=int, default=4)
@@ -234,6 +220,9 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--checkpoint-dir", default="checkpoints")
     parser.add_argument("--results-dir", default="results")
     parser.add_argument("--log-dir", default="logs")
+    parser.add_argument("--lr-scheduler-factor", type=float, default=0.1)
+    parser.add_argument("--lr-scheduler-patience", type=int, default=5)
+    parser.add_argument("--exp-name", default=None)
     args = parser.parse_args()
 
     device = str(resolve_device(args.device))
@@ -260,6 +249,10 @@ def parse_args() -> TrainConfig:
         checkpoint_dir=args.checkpoint_dir,
         results_dir=args.results_dir,
         log_dir=args.log_dir,
+        lr_scheduler_factor=args.lr_scheduler_factor,
+        lr_scheduler_patience=args.lr_scheduler_patience,
+        exp_name=args.exp_name,
+        weight_decay=args.weight_decay,
     )
 
 

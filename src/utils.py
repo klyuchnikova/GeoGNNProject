@@ -4,6 +4,7 @@ import random
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -43,6 +44,9 @@ class TrainConfig:
     checkpoint_dir: str = "checkpoints"
     results_dir: str = "results"
     log_dir: str = "logs"
+    lr_scheduler_factor: float = 0.01
+    lr_scheduler_patience: int = 5
+    exp_name: Optional[str] = None
 
 
 def default_device() -> str:
@@ -50,7 +54,6 @@ def default_device() -> str:
 
 
 def resolve_device(requested: str | None = None) -> torch.device:
-    """Pick a usable device, falling back to CPU when CUDA/cuDNN is broken."""
     if requested in (None, "", "auto"):
         requested = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -65,10 +68,16 @@ def resolve_device(requested: str | None = None) -> torch.device:
         return torch.device("cpu")
 
     try:
+        # Critical fix for V100 + CUDA 12.1 + cuDNN 9.x
+        torch.backends.cudnn.enabled = False
+        torch.backends.cudnn.benchmark = False
         x = torch.randn(2, 3, device="cuda")
         gru = torch.nn.GRU(3, 4, batch_first=True).cuda()
         gru(x)
         torch.cuda.synchronize()
+
+        # Re-enable for convolutions if needed
+        # torch.backends.cudnn.enabled = True
         return torch.device(requested)
     except Exception as exc:
         logging.getLogger("geognn").warning(
@@ -231,7 +240,7 @@ def save_results(
 
 
 def run_name(cfg: TrainConfig) -> str:
-    return f"{cfg.model}_{cfg.dataset}_{cfg.city}"
+    return f"{cfg.model}_{cfg.dataset}_{cfg.city}" + ("_" + cfg.exp_name if cfg.exp_name else '')
 
 
 def output_paths(cfg: TrainConfig) -> tuple[Path, Path, Path]:
