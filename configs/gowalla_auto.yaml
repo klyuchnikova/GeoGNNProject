@@ -1,0 +1,59 @@
+data:
+  dataset: gowalla
+  raw_checkins: data/raw/loc-gowalla_totalCheckins.txt.gz
+  raw_friendships: data/raw/loc-gowalla_edges.txt.gz
+  raw_metadata: data/raw/gowalla_spots_subset1.csv
+  city: auto
+  candidate_cities: [new_york, los_angeles, chicago, san_francisco, austin, dallas, seattle, boston]
+  min_checkins: 101
+  min_poi_visits: 3
+  sequence_length: 20
+  sequence_stride: 20
+  split_mode: robust
+  train_ratio: 0.70
+  val_ratio: 0.10
+  test_ratio: 0.20
+  output_dir: data/processed
+stkg:
+  spatial_radius_km: 3.0
+  spatial_topk: 50
+  include_friendship: true
+  output_dir: data/kge
+kge:
+  embedding_dim: 64
+  margin: 1.0
+  learning_rate: 0.001
+  batch_size: 4096
+  epochs: 50
+  patience: 8
+  checkpoint: data/kge/transe_best.pt
+  device: auto
+graphs:
+  transition_topk: 100
+  user_poi_topk: 100
+  friend_topk: 20
+  score_chunk_size: 1024
+  output_dir: data/graphs
+model:
+  rnn: gru
+  hidden_dim: 64
+  lambda_t: 0.1
+  lambda_s: 0.2
+  lambda_loc: 1.0
+  lambda_user: 1.0
+  use_spatial_graph: true
+  use_friend_graph: true
+  coordinate_distance: haversine_km
+  dropout: 0.1
+train:
+  batch_size: 64
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  gradient_clip: 5.0
+  patience: 8
+  seed: 42
+  device: auto
+  checkpoint_dir: checkpoints
+  run_name: gowalla_graph_flashback
+artifacts_dir: artifacts

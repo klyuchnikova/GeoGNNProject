@@ -1,174 +1,56 @@
+from __future__ import annotations
+import argparse, json
+from pathlib import Path
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-import numpy as np
-import time, os
-import pickle
-from setting import Setting
-from trainer import FlashbackTrainer
-from dataloader import PoiDataloader
-from dataset import Split
-from utils import *
-from network import create_h0_strategy
-from evaluation import Evaluation
-from tqdm import tqdm
-from scipy.sparse import coo_matrix
+from flashback.config import load_config,resolve_device,seed_everything,dump_json
+from flashback.data.sequences import NextPoiSequenceDataset
+from flashback.model.graph_flashback import load_model
+from flashback.evaluation.evaluator import evaluate
+from flashback.utils import write_table
+from flashback.popularity_baseline import evaluate_popularity
 
-# parse settings
-setting = Setting()
-setting.parse()
-dir_name = os.path.dirname(setting.log_file)
-if dir_name and not os.path.exists(dir_name):
-    os.makedirs(dir_name, exist_ok=True)
-timestring = time.strftime('%Y%m%d%H%M%S', time.localtime())
-setting.log_file = setting.log_file + '_' + timestring
-log = open(setting.log_file, 'w')
 
-# print(setting)
+def _loader(path,split,cfg,shuffle=False):
+    ds=NextPoiSequenceDataset.from_parquet(path,split,cfg.data.sequence_length,cfg.data.sequence_stride)
+    return DataLoader(ds,batch_size=cfg.train.batch_size,shuffle=shuffle,num_workers=cfg.train.num_workers)
 
-# log_string(log, 'log_file: ' + setting.log_file)
-# log_string(log, 'user_file: ' + setting.trans_user_file)
-# log_string(log, 'loc_temporal_file: ' + setting.trans_loc_file)
-# log_string(log, 'loc_spatial_file: ' + setting.trans_loc_spatial_file)
-# log_string(log, 'interact_file: ' + setting.trans_interact_file)
+def train_graph_flashback(cfg,checkins_path):
+    seed_everything(cfg.train.seed); device=resolve_device(cfg.train.device)
+    model=load_model(cfg,checkins_path).to(device); opt=torch.optim.Adam(model.parameters(),lr=cfg.train.learning_rate,weight_decay=cfg.train.weight_decay)
+    train_loader=_loader(checkins_path,"train",cfg,True)
+    val_split="validation" if cfg.data.val_ratio>0 else "test"; val_loader=_loader(checkins_path,val_split,cfg)
+    ckpt_dir=Path(cfg.train.checkpoint_dir); ckpt_dir.mkdir(parents=True,exist_ok=True); ckpt=ckpt_dir/f"{cfg.train.run_name}_best.pt"
+    history=[]; best=float("inf"); bad=0
+    for epoch in range(1,cfg.train.epochs+1):
+        model.train(); total=count=0
+        for batch in train_loader:
+            batch={k:v.to(device) for k,v in batch.items()}; mask=batch["target_mask"]
+            logits,_,_=model(batch["locations"],batch["timestamps"],batch["coordinates"],batch["user_id"],batch["valid_input"])
+            loss=torch.nn.functional.cross_entropy(logits[mask],batch["targets"][mask])
+            opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(),cfg.train.gradient_clip); opt.step()
+            total+=float(loss.detach())*int(mask.sum()); count+=int(mask.sum())
+        val,_=evaluate(model,val_loader,device); row={"epoch":epoch,"train_loss":total/max(1,count),**{f"validation_{k}":v for k,v in val.items()}}; history.append(row)
+        if val["loss"]<best-1e-6:
+            best=val["loss"];bad=0;torch.save({"state_dict":model.state_dict(),"config":cfg.to_dict(),"epoch":epoch},ckpt)
+        else:
+            bad+=1
+            if bad>=cfg.train.patience: break
+    out=Path(cfg.artifacts_dir)/"results";out.mkdir(parents=True,exist_ok=True);pd.DataFrame(history).to_csv(out/f"{cfg.train.run_name}_history.csv",index=False)
+    saved=torch.load(ckpt,map_location=device,weights_only=False);model.load_state_dict(saved["state_dict"])
+    results={"validation":evaluate(model,val_loader,device)[0],"best_epoch":saved["epoch"]}
+    if cfg.train.evaluate_test_after_training:
+        test_loader=_loader(checkins_path,"test",cfg); test,pred=evaluate(model,test_loader,device,True); results["test"]=test
+        pred_dir=Path(cfg.artifacts_dir)/"predictions";pred_dir.mkdir(parents=True,exist_ok=True);write_table(pd.DataFrame(pred),pred_dir/f"{cfg.train.run_name}_test.parquet",index=False)
+    dump_json(results,out/f"{cfg.train.run_name}_metrics.json")
+    # Lightweight sanity baselines on the identical test targets.
+    for personal, name in [(False, "global_popularity"), (True, "personal_popularity")]:
+        baseline = evaluate_popularity(checkins_path, cfg.data.sequence_length, cfg.data.sequence_stride, cfg.train.batch_size, personal)
+        dump_json({"test": baseline}, out/f"{name}_metrics.json")
+    return ckpt,results
 
-# log_string(log, str(setting.lambda_user))
-# log_string(log, str(setting.lambda_loc))
-
-# log_string(log, 'W in AXW: ' + str(setting.use_weight))
-# log_string(log, 'GCN in user: ' + str(setting.use_graph_user))
-# log_string(log, 'spatial graph: ' + str(setting.use_spatial_graph))
-
-message = ''.join([f'{k}: {v}\n' for k, v in vars(setting).items()])
-log_string(log, message)
-
-# load dataset
-poi_loader = PoiDataloader(
-    setting.max_users, setting.min_checkins)  # 0， 5*20+1
-poi_loader.read(setting.dataset_file)
-# print('Active POI number: ', poi_loader.locations())  # 18737 106994
-# print('Active User number: ', poi_loader.user_count())  # 32510 7768
-# print('Total Checkins number: ', poi_loader.checkins_count())  # 1278274
-
-log_string(log, 'Active POI number:{}'.format(poi_loader.locations()))
-log_string(log, 'Active User number:{}'.format(poi_loader.user_count()))
-log_string(log, 'Total Checkins number:{}'.format(poi_loader.checkins_count()))
-
-dataset = poi_loader.create_dataset(
-    setting.sequence_length, setting.batch_size, Split.TRAIN)  # 20, 200 or 1024, 0
-dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
-dataset_test = poi_loader.create_dataset(
-    setting.sequence_length, setting.batch_size, Split.TEST)
-dataloader_test = DataLoader(dataset_test, batch_size=1, shuffle=False)
-assert setting.batch_size < poi_loader.user_count(
-), 'batch size must be lower than the amount of available users'
-
-# create flashback trainer
-with open(setting.trans_loc_file, 'rb') as f:  # transition POI graph
-    transition_graph = pickle.load(f)  # 在cpu上
-# transition_graph = top_transition_graph(transition_graph)
-transition_graph = coo_matrix(transition_graph)
-
-if setting.use_spatial_graph:
-    with open(setting.trans_loc_spatial_file, 'rb') as f:  # spatial POI graph
-        spatial_graph = pickle.load(f)  # 在cpu上
-    # spatial_graph = top_transition_graph(spatial_graph)
-    spatial_graph = coo_matrix(spatial_graph)
-else:
-    spatial_graph = None
-
-if setting.use_graph_user:
-    with open(setting.trans_user_file, 'rb') as f:
-        friend_graph = pickle.load(f)  # 在cpu上
-    # friend_graph = top_transition_graph(friend_graph)
-    friend_graph = coo_matrix(friend_graph)
-else:
-    friend_graph = None
-
-with open(setting.trans_interact_file, 'rb') as f:  # User-POI interaction graph
-    interact_graph = pickle.load(f)  # 在cpu上
-interact_graph = csr_matrix(interact_graph)
-
-log_string(log, 'Successfully load graph')
-
-trainer = FlashbackTrainer(setting.lambda_t, setting.lambda_s, setting.lambda_loc, setting.lambda_user,
-                           setting.use_weight, transition_graph, spatial_graph, friend_graph, setting.use_graph_user,
-                           setting.use_spatial_graph, interact_graph)  # 0.01, 100 or 1000
-h0_strategy = create_h0_strategy(
-    setting.hidden_dim, setting.is_lstm)  # 10 True or False
-trainer.prepare(poi_loader.locations(), poi_loader.user_count(), setting.hidden_dim, setting.rnn_factory,
-                setting.device)
-evaluation_test = Evaluation(dataset_test, dataloader_test,
-                             poi_loader.user_count(), h0_strategy, trainer, setting, log)
-print('{} {}'.format(trainer, setting.rnn_factory))
-
-#  training loop
-optimizer = torch.optim.Adam(trainer.parameters(
-), lr=setting.learning_rate, weight_decay=setting.weight_decay)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(
-    optimizer, milestones=[20, 40, 60, 80], gamma=0.2)
-
-param_count = trainer.count_parameters()
-log_string(log, f'In total: {param_count} trainable parameters')
-
-bar = tqdm(total=setting.epochs)
-bar.set_description('Training')
-
-for e in range(setting.epochs):  # 100
-    h = h0_strategy.on_init(setting.batch_size, setting.device)
-    dataset.shuffle_users()  # shuffle users before each epoch!
-
-    losses = []
-    epoch_start = time.time()
-    for i, (x, t, t_slot, s, y, y_t, y_t_slot, y_s, reset_h, active_users) in enumerate(dataloader):
-        # reset hidden states for newly added users
-        for j, reset in enumerate(reset_h):
-            if reset:
-                if setting.is_lstm:
-                    hc = h0_strategy.on_reset(active_users[0][j])
-                    h[0][0, j] = hc[0]
-                    h[1][0, j] = hc[1]
-                else:
-                    h[0, j] = h0_strategy.on_reset(active_users[0][j])
-
-        x = x.squeeze().to(setting.device)
-        t = t.squeeze().to(setting.device)
-        t_slot = t_slot.squeeze().to(setting.device)
-        s = s.squeeze().to(setting.device)
-
-        y = y.squeeze().to(setting.device)
-        y_t = y_t.squeeze().to(setting.device)
-        y_t_slot = y_t_slot.squeeze().to(setting.device)
-        y_s = y_s.squeeze().to(setting.device)
-        active_users = active_users.to(setting.device)
-
-        optimizer.zero_grad()
-        loss = trainer.loss(x, t, t_slot, s, y, y_t,
-                            y_t_slot, y_s, h, active_users)
-
-        loss.backward(retain_graph=True)
-        # torch.nn.utils.clip_grad_norm_(trainer.parameters(), 5)
-        losses.append(loss.item())
-        optimizer.step()
-
-    # schedule learning rate:
-    scheduler.step()
-    bar.update(1)
-    epoch_end = time.time()
-    log_string(log, 'One training need {:.2f}s'.format(
-        epoch_end - epoch_start))
-    # statistics:
-    if (e + 1) % 1 == 0:
-        epoch_loss = np.mean(losses)
-        log_string(log, f'Epoch: {e + 1}/{setting.epochs}')
-        log_string(log, f'Used learning rate: {scheduler.get_last_lr()[0]}')
-        log_string(log, f'Avg Loss: {epoch_loss}')
-
-    if (e + 1) % setting.validate_epoch == 0:
-        log_string(log, f'~~~ Test Set Evaluation (Epoch: {e + 1}) ~~~')
-        evl_start = time.time()
-        evaluation_test.evaluate()
-        evl_end = time.time()
-        log_string(log, 'One evaluate need {:.2f}s'.format(
-            evl_end - evl_start))
-
-bar.close()
+def main():
+    p=argparse.ArgumentParser();p.add_argument("--config",required=True);p.add_argument("--checkins",default=None);a=p.parse_args();cfg=load_config(a.config)
+    checkins=a.checkins or next(Path(cfg.data.output_dir).glob(f"{cfg.data.dataset}_*_checkins.parquet"));train_graph_flashback(cfg,checkins)
+if __name__=="__main__":main()

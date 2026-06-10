@@ -1,0 +1,20 @@
+data:
+  dataset: foursquare
+  raw_checkins: data/raw/foursquare/dataset_TSMC2014_TKY.csv
+  raw_friendships: null
+  raw_metadata: null
+  city: all
+  min_checkins: 101
+  min_poi_visits: 3
+  sequence_length: 20
+  sequence_stride: 20
+  train_ratio: 0.70
+  val_ratio: 0.10
+  test_ratio: 0.20
+  output_dir: data/processed
+stkg: {spatial_radius_km: 3.0, spatial_topk: 50, include_friendship: false, output_dir: data/kge}
+kge: {embedding_dim: 64, margin: 1.0, learning_rate: 0.001, batch_size: 4096, epochs: 50, patience: 8, checkpoint: data/kge/transe_best.pt, device: auto}
+graphs: {transition_topk: 20, user_poi_topk: 100, friend_topk: 20, score_chunk_size: 1024, output_dir: data/graphs}
+model: {rnn: gru, hidden_dim: 64, lambda_t: 0.1, lambda_s: 0.2, use_spatial_graph: true, use_friend_graph: false, coordinate_distance: haversine_km, dropout: 0.1}
+train: {batch_size: 64, epochs: 50, learning_rate: 0.001, patience: 8, seed: 42, device: auto, checkpoint_dir: checkpoints, run_name: foursquare_tky_graph_flashback}
+artifacts_dir: artifacts
