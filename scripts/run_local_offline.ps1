@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("core", "full")]
+  [ValidateSet("core", "full", "filter_sweep", "cells", "graph_ablation")]
   [string]$Profile = "full",
   [string]$Dataset = ""
 )

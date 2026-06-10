@@ -29,15 +29,30 @@ def ready(cfg, stage):
     if stage=='graphs': return (Path(cfg.graphs.output_dir)/'graph_manifest.json').exists()
     return False
 
-def generate_config(name, group_cfg_path, overrides):
-    raw=yaml.safe_load((ROOT/group_cfg_path).read_text(encoding='utf-8'))
-    raw=deep_merge(raw,overrides)
-    raw['train']['run_name']=name
-    raw['train']['checkpoint_dir']=f'runs/experiments/{name}/checkpoints'
-    raw['artifacts_dir']=f'runs/experiments/{name}/artifacts'
-    out=ROOT/'runs'/'generated_configs'/f'{name}.yaml'
-    out.parent.mkdir(parents=True,exist_ok=True)
-    out.write_text(yaml.safe_dump(raw,sort_keys=False,allow_unicode=True),encoding='utf-8')
+def group_config(suite, group_name):
+    group = suite['groups'][group_name]
+    raw = yaml.safe_load((ROOT/group['base_config']).read_text(encoding='utf-8'))
+    raw = deep_merge(raw, group.get('overrides', {}))
+    return raw
+
+
+def write_group_config(suite, group_name):
+    raw = group_config(suite, group_name)
+    out = ROOT/'runs'/'generated_configs'/f'_shared_{group_name}.yaml'
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding='utf-8')
+    return out
+
+
+def generate_config(name, suite, group_name, overrides):
+    raw = group_config(suite, group_name)
+    raw = deep_merge(raw, overrides)
+    raw['train']['run_name'] = name
+    raw['train']['checkpoint_dir'] = f'runs/experiments/{name}/checkpoints'
+    raw['artifacts_dir'] = f'runs/experiments/{name}/artifacts'
+    out = ROOT/'runs'/'generated_configs'/f'{name}.yaml'
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding='utf-8')
     return out
 
 def collect(suite, selected, status):
@@ -47,7 +62,7 @@ def collect(suite, selected, status):
         p=ROOT/'runs'/'experiments'/name/'artifacts'/'results'/f'{name}_metrics.json'
         if not p.exists(): continue
         data=json.loads(p.read_text())
-        row={'experiment':name,'label':meta.get('label',name),'source':'experiment','seed_group':meta.get('seed_group',''),'best_epoch':data.get('best_epoch')}
+        row={'experiment':name,'label':meta.get('label',name),'source':'experiment','family':meta.get('family',''),'seed_group':meta.get('seed_group',''),'best_epoch':data.get('best_epoch')}
         row.update({m:data.get('test',{}).get(m) for m in METRICS})
         rows.append(row)
     # baselines once from first completed experiment
@@ -58,11 +73,11 @@ def collect(suite, selected, status):
             p=result_dir/f'{baseline}_metrics.json'
             if p.exists():
                 d=json.loads(p.read_text()).get('test',{})
-                row={'experiment':baseline,'label':label,'source':'baseline','seed_group':'','best_epoch':None}
+                row={'experiment':baseline,'label':label,'source':'baseline','family':'baseline','seed_group':'','best_epoch':None}
                 row.update({m:d.get(m) for m in METRICS}); rows.append(row)
         break
     for label,vals in suite.get('published_reference',{}).items():
-        row={'experiment':label.lower().replace(' ','_'),'label':label,'source':'published_reference','seed_group':'','best_epoch':None}
+        row={'experiment':label.lower().replace(' ','_'),'label':label,'source':'published_reference','family':'published_reference','seed_group':'','best_epoch':None}
         row.update({m:vals.get(m) for m in METRICS}); rows.append(row)
     summary=ROOT/'runs'/'summary'; summary.mkdir(parents=True,exist_ok=True)
     frame=pd.DataFrame(rows)
@@ -78,6 +93,26 @@ def collect(suite, selected, status):
             seed_rows.append(r)
     pd.DataFrame(seed_rows).to_csv(summary/'seed_summary.csv',index=False)
     (summary/'run_status.json').write_text(json.dumps(status,indent=2,ensure_ascii=False),encoding='utf-8')
+    if not frame.empty and 'family' in frame:
+        common = frame[frame['family'].isin(['common_protocol', 'baseline', 'published_reference'])]
+        common.to_csv(summary/'common_protocol_results.csv', index=False)
+        filters = frame[frame['family'].eq('filter_sweep')]
+        filters.to_csv(summary/'per_filter_results.csv', index=False)
+    diag_rows=[]
+    for diag_path in sorted((ROOT/'runs'/'shared').glob('*/graphs/graph_neighbor_diagnostics.json')):
+        try:
+            d=json.loads(diag_path.read_text())
+        except Exception:
+            continue
+        group=diag_path.parts[-3]
+        row={'group':group,'graph_dir':d.get('graph_dir',''),
+             'transition_nnz':d.get('transition_nnz'), 'preference_nnz':d.get('preference_nnz')}
+        for prefix,key in [('transition','transition_true_next_neighbor'),('preference','preference_true_target_neighbor')]:
+            for metric,value in (d.get(key) or {}).items():
+                row[f'{prefix}_{metric}']=value
+        diag_rows.append(row)
+    if diag_rows:
+        pd.DataFrame(diag_rows).to_csv(summary/'graph_diagnostics_summary.csv', index=False)
     if not frame.empty:
         import matplotlib.pyplot as plt
         plot=frame[frame.source!='published_reference'].dropna(subset=['MRR']).sort_values('MRR')
@@ -89,7 +124,7 @@ def collect(suite, selected, status):
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--suite',default='experiments/austin_suite.yaml')
-    ap.add_argument('--profile',choices=['core','full'],default='full')
+    ap.add_argument('--profile',choices=list(yaml.safe_load((ROOT/'experiments/austin_suite.yaml').read_text(encoding='utf-8'))['profiles'].keys()),default='full')
     ap.add_argument('--force-assets',action='store_true')
     ap.add_argument('--force-train',action='store_true')
     args=ap.parse_args()
@@ -105,16 +140,19 @@ def main():
         g=suite['experiments'][name]['group']
         if g not in groups: groups.append(g)
     for group in groups:
-        base_path=suite['groups'][group]['base_config']
-        cfg=load_config(ROOT/base_path)
+        group_path = write_group_config(suite, group)
+        cfg=load_config(group_path)
         for stage in ['prepare','stkg','kge','graphs']:
             if args.force_assets or not ready(cfg,stage):
-                run_cmd([sys.executable,'-m','flashback.pipeline','--config',base_path,'--stage',stage])
+                run_cmd([sys.executable,'-m','flashback.pipeline','--config',group_path.relative_to(ROOT),'--stage',stage])
             else: print(f'[resume] {group}: {stage} already complete')
+        diag = Path(cfg.graphs.output_dir) / 'graph_neighbor_diagnostics.json'
+        if args.force_assets or not diag.exists():
+            run_cmd([sys.executable, 'scripts/graph_diagnostics.py', '--config', group_path.relative_to(ROOT)])
     # train experiments
     for name in selected:
-        meta=suite['experiments'][name]; group=meta['group']; base_path=suite['groups'][group]['base_config']
-        generated=generate_config(name,base_path,meta.get('overrides',{}))
+        meta=suite['experiments'][name]; group=meta['group']
+        generated=generate_config(name,suite,group,meta.get('overrides',{}))
         metrics=ROOT/'runs'/'experiments'/name/'artifacts'/'results'/f'{name}_metrics.json'
         started=time.time()
         try:

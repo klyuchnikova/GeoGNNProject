@@ -73,4 +73,21 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Some notebook/CI environments keep native PyTorch worker threads alive
+    # after all Python work is done. The pipeline is invoked as a subprocess by
+    # the experiment runner, so force a clean process exit after flushing logs.
+    import os
+    import sys
+    import traceback
+
+    code = 0
+    try:
+        main()
+    except SystemExit as exc:
+        code = int(exc.code or 0)
+    except Exception:
+        traceback.print_exc()
+        code = 1
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)

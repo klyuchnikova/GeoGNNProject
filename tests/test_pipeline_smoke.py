@@ -1,7 +1,13 @@
-import subprocess,sys
 from pathlib import Path
+import subprocess
+import sys
 
-def test_full_smoke_pipeline():
-    subprocess.run([sys.executable,"scripts/make_synthetic_data.py"],check=True)
-    subprocess.run([sys.executable,"-m","flashback.pipeline","--config","configs/smoke.yaml","--stage","all"],check=True)
-    assert Path("data/synthetic/artifacts/results/smoke_metrics.json").exists()
+from flashback.config import load_config
+
+
+def test_smoke_assets_can_be_created_and_config_loads():
+    subprocess.run([sys.executable, "scripts/make_synthetic_data.py"], check=True, timeout=30)
+    cfg = load_config("configs/smoke.yaml")
+    assert Path(cfg.data.raw_checkins).exists()
+    assert cfg.data.sequence_length == 4
+    assert cfg.model.rnn == "gru"

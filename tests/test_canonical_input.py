@@ -5,6 +5,7 @@ import yaml
 
 from flashback.config import load_config
 from flashback.data.preprocessing import prepare_dataset
+from flashback.utils import read_table
 
 
 def test_preselected_canonical_gowalla(tmp_path: Path):
@@ -43,7 +44,7 @@ def test_preselected_canonical_gowalla(tmp_path: Path):
     }), encoding="utf-8")
     cfg = load_config(cfg_path)
     paths = prepare_dataset(cfg)
-    prepared = pd.read_parquet(paths.checkins)
+    prepared = read_table(paths.checkins)
     assert len(prepared) == 12
     assert prepared["user_id"].nunique() == 2
     assert prepared["poi_id"].nunique() == 3

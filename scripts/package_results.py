@@ -9,7 +9,7 @@ EXCLUDE_PARTS={'__pycache__','.pytest_cache','processed'}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--output',type=Path,default=DEFAULT); args=ap.parse_args()
-    include=[ROOT/'runs'/'summary',ROOT/'runs'/'generated_configs',ROOT/'runs'/'experiments']
+    include=[ROOT/'runs'/'summary',ROOT/'runs'/'generated_configs',ROOT/'runs'/'experiments',ROOT/'runs'/'shared']
     files=[]
     for base in include:
         if not base.exists(): continue

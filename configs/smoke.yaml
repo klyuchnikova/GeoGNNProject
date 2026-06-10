@@ -18,6 +18,9 @@ data:
   test_ratio: 0.2
   output_dir: data/synthetic/processed
   max_users: 8
+  filter_mode: min_only
+  user_k: 0
+  poi_k: 0
 stkg:
   spatial_mode: radius
   spatial_topk: 5

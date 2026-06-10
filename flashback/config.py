@@ -27,8 +27,16 @@ class DataConfig:
     ])
     # Iterative user/POI k-core thresholds. Paper-like mode uses 101/1;
     # tuned common-benchmark mode uses smaller user_k and poi_k=10.
+    # Filtering follows the same ideas as the GUGEN branch:
+    # - min_only: one sequential user-min then poi-min pass.
+    # - iterative_kcore: repeated user/POI filtering until stable.
+    # - combined: min_only first, then iterative k-core with user_k/poi_k.
+    # - none: keep all rows after city selection.
+    filter_mode: str = "iterative_kcore"  # none | min_only | iterative_kcore | combined
     min_checkins: int = 101
     min_poi_visits: int = 1
+    user_k: int = 0
+    poi_k: int = 0
     max_users: int = 0
     sequence_length: int = 20
     sequence_stride: int = 20
@@ -196,6 +204,8 @@ def validate_config(cfg: ExperimentConfig) -> None:
         raise ValueError("data.dataset must be 'gowalla' or 'foursquare'")
     if cfg.data.input_format not in {"snap", "canonical_csv", "foursquare"}:
         raise ValueError("data.input_format must be snap, canonical_csv or foursquare")
+    if cfg.data.filter_mode not in {"none", "min_only", "iterative_kcore", "combined"}:
+        raise ValueError("data.filter_mode must be none, min_only, iterative_kcore or combined")
     if cfg.data.sequence_length < 2:
         raise ValueError("sequence_length must be >= 2")
     if cfg.data.sequence_stride < 1:

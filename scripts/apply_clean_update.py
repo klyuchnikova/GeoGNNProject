@@ -3,9 +3,11 @@ import shutil
 ROOT=Path(__file__).resolve().parents[1]
 REMOVE=[
  'docs','examples','artifacts','artifacts_faithful','artifacts_paper','checkpoints','checkpoints_faithful','checkpoints_paper',
- 'data/synthetic','README_OLD.md','MERGE_INSTRUCTIONS.md','IMPLEMENTATION_REPORT.md','MANIFEST.sha256',
+ 'README_OLD.md','MERGE_INSTRUCTIONS.md','IMPLEMENTATION_REPORT.md','MANIFEST.sha256',
  'configs/gowalla_auto.yaml','configs/gowalla_faithful.yaml','configs/gowalla_paper.yaml','configs/gowalla_smoke.yaml',
- 'notebooks/kaggle_graph_flashback.ipynb'
+ 'notebooks/kaggle_graph_flashback.ipynb',
+ 'runs','graph_flashback_austin_experiments.zip',
+ 'data/processed','data/kge','data/graphs','data/synthetic'
 ]
 for rel in REMOVE:
  p=ROOT/rel

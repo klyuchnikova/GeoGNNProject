@@ -17,6 +17,9 @@ data:
   val_ratio: 0.1
   test_ratio: 0.1
   output_dir: runs/shared/tuned_radius/processed
+  filter_mode: iterative_kcore
+  user_k: 0
+  poi_k: 0
 stkg:
   spatial_mode: radius
   spatial_topk: 50

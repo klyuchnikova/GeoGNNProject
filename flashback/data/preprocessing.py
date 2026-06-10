@@ -46,16 +46,52 @@ def _load_metadata(path: str | Path | None) -> pd.DataFrame | None:
     return frame
 
 
-def _iterative_filter(frame: pd.DataFrame, min_checkins: int, min_poi_visits: int) -> pd.DataFrame:
+def _min_filter_once(frame: pd.DataFrame, min_checkins: int, min_poi_visits: int) -> pd.DataFrame:
+    """Sequential user-min then POI-min filtering, matching the GUGEN-style sweep."""
+    frame = frame.copy()
+    if min_checkins > 1:
+        user_counts = frame["raw_user_id"].value_counts()
+        frame = frame[frame["raw_user_id"].isin(user_counts[user_counts >= min_checkins].index)]
+    if min_poi_visits > 1:
+        poi_counts = frame["raw_poi_id"].value_counts()
+        frame = frame[frame["raw_poi_id"].isin(poi_counts[poi_counts >= min_poi_visits].index)]
+    return frame
+
+
+def _iterative_filter(frame: pd.DataFrame, user_k: int, poi_k: int) -> pd.DataFrame:
     frame = frame.copy()
     previous = -1
     while previous != len(frame):
         previous = len(frame)
-        user_counts = frame["raw_user_id"].value_counts()
-        frame = frame[frame["raw_user_id"].isin(user_counts[user_counts >= min_checkins].index)]
-        poi_counts = frame["raw_poi_id"].value_counts()
-        frame = frame[frame["raw_poi_id"].isin(poi_counts[poi_counts >= min_poi_visits].index)]
+        if user_k > 1:
+            user_counts = frame["raw_user_id"].value_counts()
+            frame = frame[frame["raw_user_id"].isin(user_counts[user_counts >= user_k].index)]
+        if poi_k > 1:
+            poi_counts = frame["raw_poi_id"].value_counts()
+            frame = frame[frame["raw_poi_id"].isin(poi_counts[poi_counts >= poi_k].index)]
     return frame
+
+
+def _apply_filtering(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.DataFrame:
+    mode = cfg.data.filter_mode
+    if mode == "none":
+        return frame.copy()
+    if mode == "min_only":
+        return _min_filter_once(frame, cfg.data.min_checkins, cfg.data.min_poi_visits)
+    if mode == "combined":
+        frame = _min_filter_once(frame, cfg.data.min_checkins, cfg.data.min_poi_visits)
+        return _iterative_filter(
+            frame,
+            cfg.data.user_k or cfg.data.min_checkins,
+            cfg.data.poi_k or cfg.data.min_poi_visits,
+        )
+    if mode == "iterative_kcore":
+        return _iterative_filter(
+            frame,
+            cfg.data.user_k or cfg.data.min_checkins,
+            cfg.data.poi_k or cfg.data.min_poi_visits,
+        )
+    raise ValueError(f"Unknown filter mode: {mode}")
 
 
 def _split_users(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.DataFrame:
@@ -135,7 +171,8 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
         if "metadata_poi_name" in frame:
             frame["poi_name"] = frame["poi_name"].fillna(frame["metadata_poi_name"])
 
-    frame = _iterative_filter(frame, cfg.data.min_checkins, cfg.data.min_poi_visits)
+    raw_rows_before_filter = len(frame)
+    frame = _apply_filtering(frame, cfg)
     if cfg.data.max_users > 0:
         top_users = frame["raw_user_id"].value_counts().head(cfg.data.max_users).index
         frame = frame[frame["raw_user_id"].isin(top_users)]
@@ -203,6 +240,12 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
         "categories": len(category_map),
         "friend_edges": 0 if friendships is None else len(friendships),
         "split_counts": split_counts,
+        "raw_rows_before_filter": int(raw_rows_before_filter),
+        "filter_mode": cfg.data.filter_mode,
+        "min_checkins": cfg.data.min_checkins,
+        "min_poi_visits": cfg.data.min_poi_visits,
+        "user_k": cfg.data.user_k or cfg.data.min_checkins,
+        "poi_k": cfg.data.poi_k or cfg.data.min_poi_visits,
         "metadata_category_coverage": float(frame["category"].notna().mean()),
         "metadata_name_coverage": float(frame["poi_name"].notna().mean()),
         "timestamp_min": frame["timestamp"].min(),
