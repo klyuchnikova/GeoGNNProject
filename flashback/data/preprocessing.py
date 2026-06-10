@@ -22,6 +22,7 @@ class PreparedPaths:
     pois: Path
     legacy_txt: Path
     metadata: Path
+    categories: Path | None = None
 
 
 def _load_metadata(path: str | Path | None) -> pd.DataFrame | None:
@@ -77,7 +78,20 @@ def _split_users(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.DataFrame:
 def _read_friendships(path: str | Path | None, user_map: dict[Any, int]) -> pd.DataFrame | None:
     if not path or not Path(path).exists():
         return None
-    edges = pd.read_csv(path, sep="\t", names=["raw_user_a", "raw_user_b"], header=None, compression="infer")
+    path = Path(path)
+    first = path.open("rb").readline().decode("utf-8", errors="replace") if path.suffix != ".gz" else ""
+    if path.name.endswith(".csv") or path.name.endswith(".csv.gz"):
+        edges = pd.read_csv(path, compression="infer")
+        edges.columns = [str(c).strip().lower() for c in edges.columns]
+        aliases = {"user_a": "raw_user_a", "user_b": "raw_user_b", "source": "raw_user_a", "target": "raw_user_b"}
+        edges = edges.rename(columns={c: aliases.get(c, c) for c in edges.columns})
+        if not {"raw_user_a", "raw_user_b"}.issubset(edges.columns):
+            if edges.shape[1] < 2:
+                raise ValueError("Friendship CSV must contain two user columns")
+            edges = edges.iloc[:, :2]
+            edges.columns = ["raw_user_a", "raw_user_b"]
+    else:
+        edges = pd.read_csv(path, sep="\t", names=["raw_user_a", "raw_user_b"], header=None, compression="infer")
     edges = edges[edges["raw_user_a"].isin(user_map) & edges["raw_user_b"].isin(user_map)].copy()
     if edges.empty:
         return edges.assign(user_a=pd.Series(dtype=int), user_b=pd.Series(dtype=int))
@@ -94,7 +108,7 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
         cfg.data.raw_checkins,
         cfg.data.candidate_cities,
         cfg.data.min_checkins,
-    ) if cfg.data.dataset == "gowalla" and cfg.data.candidate_cities else pd.DataFrame()
+    ) if cfg.data.dataset == "gowalla" and cfg.data.candidate_cities and not cfg.data.preselected_city else pd.DataFrame()
     if not ranking.empty:
         ranking.to_csv(output / "city_ranking.csv", index=False)
     city = cfg.data.city
@@ -103,10 +117,10 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
     if city != "all" and city not in CITY_BOXES:
         raise KeyError(f"Unknown city box {city}; available: {sorted(CITY_BOXES)}")
 
-    adapter = adapter_for(cfg.data.dataset)
+    adapter = adapter_for(cfg.data.dataset, cfg.data.input_format)
     chunks = []
     for chunk in adapter.iter_checkins(cfg.data.raw_checkins):
-        if city != "all":
+        if city != "all" and not cfg.data.preselected_city:
             chunk = chunk[CITY_BOXES[city].mask(chunk)]
         if not chunk.empty:
             chunks.append(chunk)
@@ -134,6 +148,16 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
     poi_map = {value: idx for idx, value in enumerate(raw_pois)}
     frame["user_id"] = frame["raw_user_id"].map(user_map).astype(int)
     frame["poi_id"] = frame["raw_poi_id"].map(poi_map).astype(int)
+
+    # Category IDs are optional side information for the tuned Flashback model.
+    # 0 is reserved for unknown/missing categories so the same code also works
+    # for Gowalla subsets or Foursquare files without metadata.
+    category_text = frame["category"].astype("string").fillna("__unknown__").str.strip()
+    category_text = category_text.replace("", "__unknown__")
+    categories = sorted([x for x in category_text.unique().tolist() if x != "__unknown__"], key=str)
+    category_map = {"__unknown__": 0, **{value: idx + 1 for idx, value in enumerate(categories)}}
+    frame["category_id"] = category_text.map(category_map).fillna(0).astype(int)
+
     frame = frame.sort_values(["user_id", "timestamp", "poi_id"]).reset_index(drop=True)
     frame = _split_users(frame, cfg)
 
@@ -154,9 +178,11 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
     friendships_path = output / f"{cfg.data.dataset}_{city}_friendships.parquet" if friendships is not None else None
     legacy_path = output / f"checkins-{cfg.data.dataset}-{city}.txt"
     metadata_path = output / f"{cfg.data.dataset}_{city}_manifest.json"
+    categories_path = output / f"{cfg.data.dataset}_{city}_categories.csv"
     write_table(frame, checkins_path, index=False)
     users.to_csv(users_path, index=False)
     poi_info.to_csv(pois_path, index=False)
+    pd.DataFrame({"category": list(category_map.keys()), "category_id": list(category_map.values())}).to_csv(categories_path, index=False)
     if friendships_path is not None:
         write_table(friendships, friendships_path, index=False)
 
@@ -174,6 +200,7 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
         "checkins": len(frame),
         "users": len(users),
         "pois": len(poi_info),
+        "categories": len(category_map),
         "friend_edges": 0 if friendships is None else len(friendships),
         "split_counts": split_counts,
         "metadata_category_coverage": float(frame["category"].notna().mean()),
@@ -183,4 +210,4 @@ def prepare_dataset(cfg: ExperimentConfig) -> PreparedPaths:
         "config": cfg.to_dict(),
     }
     dump_json(manifest, metadata_path)
-    return PreparedPaths(checkins_path, friendships_path, users_path, pois_path, legacy_path, metadata_path)
+    return PreparedPaths(checkins_path, friendships_path, users_path, pois_path, legacy_path, metadata_path, categories_path)

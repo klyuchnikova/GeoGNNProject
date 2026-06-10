@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geognn-graph-flashback"
-version = "0.3.0"
-description = "Reproducible STKG, TransE and Graph-Flashback pipeline for Gowalla and Foursquare"
+version = "0.6.0"
+description = "Tuned and faithful Graph-Flashback pipelines for the portable Austin Gowalla dataset"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.26,<3", "pandas>=2.1,<4", "scipy>=1.11,<2",

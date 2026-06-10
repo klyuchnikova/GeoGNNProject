@@ -45,6 +45,37 @@ class GowallaSnapAdapter(DatasetAdapter):
             yield _clean_canonical(chunk)
 
 
+class GowallaCanonicalAdapter(DatasetAdapter):
+    """Reads an Austin-only enriched CSV/CSV.GZ package.
+
+    Required columns: raw_user_id, timestamp, latitude, longitude, raw_poi_id.
+    Optional columns: category, poi_name.
+    """
+
+    def iter_checkins(self, path: str | Path, chunksize: int = 500_000) -> Iterator[pd.DataFrame]:
+        for chunk in pd.read_csv(path, compression="infer", chunksize=chunksize):
+            chunk.columns = [str(c).strip().lower() for c in chunk.columns]
+            aliases = {
+                "user_id": "raw_user_id", "userid": "raw_user_id",
+                "poi_id": "raw_poi_id", "placeid": "raw_poi_id",
+                "lat": "latitude", "lng": "longitude", "lon": "longitude",
+                "datetime": "timestamp", "time": "timestamp",
+                "spot_categories": "category", "spot_category": "category",
+                "spotname": "poi_name", "name": "poi_name",
+            }
+            chunk = chunk.rename(columns={c: aliases.get(c, c) for c in chunk.columns})
+            required = {"raw_user_id", "raw_poi_id", "timestamp", "latitude", "longitude"}
+            missing = required - set(chunk.columns)
+            if missing:
+                raise ValueError(f"Canonical Gowalla CSV misses columns: {sorted(missing)}")
+            if "category" not in chunk:
+                chunk["category"] = pd.NA
+            if "poi_name" not in chunk:
+                chunk["poi_name"] = pd.NA
+            chunk["timestamp"] = pd.to_datetime(chunk["timestamp"], utc=True, errors="coerce")
+            yield _clean_canonical(chunk[CANONICAL_COLUMNS])
+
+
 class FoursquareTSMCAdapter(DatasetAdapter):
     """Reads TSMC2014 NYC/Tokyo CSV or TXT files with flexible headers."""
 
@@ -98,7 +129,9 @@ class FoursquareTSMCAdapter(DatasetAdapter):
         return _clean_canonical(frame[CANONICAL_COLUMNS])
 
 
-def adapter_for(name: str) -> DatasetAdapter:
+def adapter_for(name: str, input_format: str = "snap") -> DatasetAdapter:
+    if name == "gowalla" and input_format == "canonical_csv":
+        return GowallaCanonicalAdapter()
     if name == "gowalla":
         return GowallaSnapAdapter()
     if name == "foursquare":

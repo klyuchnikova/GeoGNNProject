@@ -9,14 +9,18 @@ data:
   min_poi_visits: 1
   max_users: 8
   sequence_length: 4
-  sequence_stride: 4
+  sequence_stride: 1
+  sequence_mode: window_last
   train_ratio: 0.6
   val_ratio: 0.2
   test_ratio: 0.2
   output_dir: data/synthetic/processed
+  input_format: snap
+  preselected_city: false
 stkg:
-  spatial_mode: rank
+  spatial_mode: radius
   spatial_topk: 5
+  spatial_radius_km: 20.0
   spatial_symmetric: true
   include_friendship: true
   output_dir: data/synthetic/kge
@@ -27,7 +31,9 @@ kge:
   learning_rate: 0.01
   batch_size: 32
   epochs: 2
+  negative_samples: 2
   patience: 2
+  sampling: relation_balanced
   checkpoint: data/synthetic/kge/transe_best.pt
   device: cpu
 graphs:
@@ -35,21 +41,45 @@ graphs:
   user_poi_topk: 5
   friend_topk: 3
   score_chunk_size: 32
+  row_relative_scores: true
   output_dir: data/synthetic/graphs
 model:
   rnn: gru
   hidden_dim: 8
   lambda_t: 0.1
   lambda_s: 0.2
+  learnable_decay: true
+  use_transition_graph: true
+  use_preference_graph: true
   use_spatial_graph: true
   use_friend_graph: true
-  graph_weight_projection: true
+  graph_weight_projection: false
+  graph_layers: 2
+  graph_include_initial: true
   coordinate_distance: haversine_km
+  use_category_embedding: true
+  use_time_embedding: true
+  use_user_context: true
+  personal_prior_weight: 1.0
+  recent_prior_weight: 0.5
+  global_prior_weight: 0.1
+  geo_prior_weight: 0.2
+  category_transition_weight: 0.2
+  personal_prior_topk: 10
+  recent_prior_tau: 3.0
+  geo_prior_scale_km: 10.0
+  learnable_prior_weights: true
+  use_repeat_gate: true
+  bounded_residual_scale: 0.0
   dropout: 0.0
 train:
   batch_size: 4
   epochs: 2
   learning_rate: 0.01
+  label_smoothing: 0.0
+  bpr_weight: 0.1
+  repeat_gate_weight: 0.1
+  hard_negatives: 3
   patience: 2
   seed: 42
   device: cpu
@@ -57,6 +87,7 @@ train:
   run_name: smoke
   checkpoint_metric: MRR
   checkpoint_mode: max
-  scheduler_milestones: [1]
+  scheduler_milestones:
+  - 1
   scheduler_gamma: 0.5
 artifacts_dir: data/synthetic/artifacts

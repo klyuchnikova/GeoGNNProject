@@ -21,6 +21,8 @@ def _topk_relation(
     chunk,
     device,
     exclude_self=False,
+    minimum_score=0.0,
+    row_relative_scores=False,
 ):
     rows: list[int] = []
     columns: list[int] = []
@@ -41,11 +43,19 @@ def _topk_relation(
                 distances[local[valid], target_positions[valid]] = float("inf")
             keep = min(k, distances.shape[1])
             distance, index = torch.topk(distances, keep, largest=False, dim=1)
+            if row_relative_scores:
+                distance = distance - distance[:, :1]
             score = torch.exp(-distance)
             for local_row in range(len(head_ids)):
-                rows.extend([start + local_row] * keep)
-                columns.extend(index[local_row].cpu().tolist())
-                values.extend(score[local_row].cpu().tolist())
+                local_score = score[local_row]
+                local_index = index[local_row]
+                if minimum_score > 0:
+                    valid = local_score >= minimum_score
+                    local_score = local_score[valid]
+                    local_index = local_index[valid]
+                rows.extend([start + local_row] * len(local_index))
+                columns.extend(local_index.cpu().tolist())
+                values.extend(local_score.cpu().tolist())
     return sp.csr_matrix(
         (np.asarray(values, np.float32), (rows, columns)),
         shape=(len(heads), len(targets)),
@@ -83,6 +93,8 @@ def construct_graphs(cfg: ExperimentConfig, checkins_path: str | Path) -> dict[s
             cfg.graphs.score_chunk_size,
             device,
             True,
+            cfg.graphs.minimum_score,
+            cfg.graphs.row_relative_scores,
         ),
         "preference": _topk_relation(
             model,
@@ -93,6 +105,8 @@ def construct_graphs(cfg: ExperimentConfig, checkins_path: str | Path) -> dict[s
             cfg.graphs.score_chunk_size,
             device,
             False,
+            cfg.graphs.minimum_score,
+            cfg.graphs.row_relative_scores,
         ),
     }
     if cfg.model.use_friend_graph:
@@ -105,6 +119,8 @@ def construct_graphs(cfg: ExperimentConfig, checkins_path: str | Path) -> dict[s
             cfg.graphs.score_chunk_size,
             device,
             True,
+            cfg.graphs.minimum_score,
+            cfg.graphs.row_relative_scores,
         )
     if cfg.model.use_spatial_graph:
         matrices["spatial"] = _topk_relation(
@@ -116,6 +132,8 @@ def construct_graphs(cfg: ExperimentConfig, checkins_path: str | Path) -> dict[s
             cfg.graphs.score_chunk_size,
             device,
             True,
+            cfg.graphs.minimum_score,
+            cfg.graphs.row_relative_scores,
         )
 
     filenames = {

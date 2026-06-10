@@ -1,11 +1,8 @@
 # Third-party notices
 
-The Graph-Flashback architecture and its temporal/spatial weighting equations are adapted from:
+This project contains an independently refactored implementation inspired by:
 
-- Kevin Xuan et al., **Graph-Flashback Network for Next Location Recommendation**, KDD 2022.
-- Upstream implementation: https://github.com/kevin-xuan/Graph-Flashback
-- Upstream KGE reference: https://github.com/kevin-xuan/KGE
+- Xuan Rao et al., **Graph-Flashback Network for Next Location Recommendation**, KDD 2022, DOI: 10.1145/3534678.3539383.
+- Original research code: https://github.com/kevin-xuan/Graph-Flashback
 
-This package is a clean-room refactor for reproducibility and does not include upstream datasets or pretrained weights.
-The existing GeoGNNProject files remain governed by the repository's Apache-2.0 license. Dataset licenses and citations
-are described in `docs/DATA_SOURCES.md`.
+The project-level license is Apache License 2.0. The upstream Graph-Flashback repository should be consulted for its own attribution and redistribution terms before copying source verbatim. This project does not bundle the original Gowalla or Foursquare datasets; users must obtain or attach the separately prepared Austin package.

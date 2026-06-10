@@ -7,16 +7,24 @@ from flashback.kge.triplets import _spatial_pairs_rank
 from flashback.model.graph_flashback import GraphFlashback
 
 
-def test_main_config_uses_ranking_checkpoint_and_faithful_graph_defaults():
-    cfg = load_config("configs/gowalla_auto.yaml")
-    assert cfg.model.rnn == "rnn"
-    assert cfg.model.hidden_dim == 10
-    assert cfg.model.lambda_s == 1000.0
-    assert not cfg.model.use_spatial_graph
-    assert not cfg.model.use_friend_graph
-    assert not cfg.model.graph_weight_projection
-    assert cfg.train.checkpoint_metric == "MRR"
-    assert cfg.data.min_poi_visits == 1
+def test_faithful_and_tuned_protocols_are_separate():
+    faithful = load_config("configs/gowalla_faithful.yaml")
+    tuned = load_config("configs/gowalla_auto.yaml")
+    assert faithful.model.rnn == "rnn"
+    assert faithful.model.hidden_dim == 10
+    assert faithful.data.sequence_mode == "block_all"
+    assert faithful.train.bpr_weight == 0
+    assert tuned.model.rnn == "gru"
+    assert tuned.model.hidden_dim == 128
+    assert tuned.data.sequence_mode == "window_last"
+    assert tuned.data.min_poi_visits == 10
+    assert tuned.train.bpr_weight > 0
+    assert tuned.model.personal_prior_weight > 0
+    assert tuned.model.recent_prior_weight > 0
+    assert tuned.model.geo_prior_weight > 0
+    assert tuned.model.category_transition_weight > 0
+    assert tuned.model.use_repeat_gate
+    assert tuned.model.use_user_context
 
 
 def test_rank_spatial_relation_is_symmetric():
@@ -32,5 +40,5 @@ def test_projection_can_be_disabled():
     cfg.model.graph_weight_projection = False
     transition = sp.eye(3, format="csr")
     preference = sp.csr_matrix([[1, 0, 0]], dtype="float32")
-    model = GraphFlashback(1, 3, cfg, transition, preference)
+    model = GraphFlashback(1, 3, 1, cfg, transition, preference)
     assert isinstance(model.poi_graph_projection, torch.nn.Identity)
