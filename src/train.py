@@ -20,6 +20,7 @@ from utils import (
     TrainConfig,
     output_paths,
     remap_ids,
+    resolve_device,
     save_checkpoint,
     save_results,
     set_seed,
@@ -110,9 +111,10 @@ def build_model(cfg: TrainConfig, vocab: dict) -> GuGen:
 
 def train_gugen(cfg: TrainConfig) -> dict:
     set_seed(cfg.seed)
-    device = torch.device(cfg.device)
+    device = resolve_device(cfg.device)
     checkpoint_dir, results_dir, log_dir = output_paths(cfg)
     logger = setup_logging(log_dir / "train.log")
+    logger.info("Using device: %s", device)
 
     filter_cfg = FilterConfig(
         min_user_visits=cfg.min_user_visits,
@@ -234,7 +236,7 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--log-dir", default="logs")
     args = parser.parse_args()
 
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = str(resolve_device(args.device))
     return TrainConfig(
         model=args.model,
         dataset=args.dataset,

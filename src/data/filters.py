@@ -44,6 +44,25 @@ class UserEntropyFilter(BaseFilter):
                 if -np.sum((p := g.poi_id.value_counts(normalize=True).values) * np.log(p + 1e-12)) >= self.min_entropy]
         return df[df.user_id.isin(keep)]
 
+class GeoBoundingBoxFilter(BaseFilter):
+    """Keep check-ins inside a lat/lon bounding box (useful for Gowalla city subsets)."""
+
+    def __init__(self, min_lat: float, max_lat: float, min_lon: float, max_lon: float):
+        self.min_lat = min_lat
+        self.max_lat = max_lat
+        self.min_lon = min_lon
+        self.max_lon = max_lon
+
+    def apply(self, df):
+        mask = (
+            (df["lat"] >= self.min_lat)
+            & (df["lat"] <= self.max_lat)
+            & (df["lon"] >= self.min_lon)
+            & (df["lon"] <= self.max_lon)
+        )
+        return df[mask]
+
+
 class DominantPoiFilter(BaseFilter):
     def __init__(self, max_ratio=0.8):
         self.max_ratio = max_ratio
@@ -62,12 +81,16 @@ class FilterConfig:
     poi_k: int = 10
     min_entropy: float | None = None
     max_dominant_ratio: float | None = None
+    bbox: tuple[float, float, float, float] | None = None
 
 
 def filter_pipeline(df: pd.DataFrame, cfg: FilterConfig) -> pd.DataFrame:
     """Apply the configured filtration steps in a fixed order."""
     filters: list[BaseFilter] = []
 
+    if cfg.bbox is not None:
+        min_lat, max_lat, min_lon, max_lon = cfg.bbox
+        filters.append(GeoBoundingBoxFilter(min_lat, max_lat, min_lon, max_lon))
     if cfg.min_user_visits > 0:
         filters.append(MinUserVisitsFilter(cfg.min_user_visits))
     if cfg.min_poi_visits > 0:

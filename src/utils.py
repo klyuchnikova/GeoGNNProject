@@ -37,12 +37,63 @@ class TrainConfig:
     poi_k: int = 10
     min_entropy: float | None = None
     max_dominant_ratio: float | None = None
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    device: str = "cpu"
     seed: int = 42
     num_workers: int = 0
     checkpoint_dir: str = "checkpoints"
     results_dir: str = "results"
     log_dir: str = "logs"
+
+
+def default_device() -> str:
+    return str(resolve_device("cuda"))
+
+
+def resolve_device(requested: str | None = None) -> torch.device:
+    """Pick a usable device, falling back to CPU when CUDA/cuDNN is broken."""
+    if requested in (None, "", "auto"):
+        requested = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if requested == "cpu":
+        return torch.device("cpu")
+
+    if not torch.cuda.is_available():
+        logging.getLogger("geognn").warning(
+            "Device '%s' requested but CUDA is not available. Using CPU.",
+            requested,
+        )
+        return torch.device("cpu")
+
+    try:
+        x = torch.randn(2, 3, device="cuda")
+        gru = torch.nn.GRU(3, 4, batch_first=True).cuda()
+        gru(x)
+        torch.cuda.synchronize()
+        return torch.device(requested)
+    except Exception as exc:
+        logging.getLogger("geognn").warning(
+            "Device '%s' is not usable (%s). Falling back to CPU.",
+            requested,
+            exc,
+        )
+        return torch.device("cpu")
+
+
+def to_json_safe(obj):
+    """Convert numpy/pandas scalars and mapping keys into JSON-serializable values."""
+    if isinstance(obj, dict):
+        return {to_json_safe(key): to_json_safe(value) for key, value in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [to_json_safe(value) for value in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, Path):
+        return str(obj)
+    return obj
 
 
 def set_seed(seed: int) -> None:
@@ -75,11 +126,15 @@ def setup_logging(log_path: Path) -> logging.Logger:
 def remap_ids(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Map raw IDs to contiguous 1-based integers (0 reserved for padding)."""
     df = df.copy()
-    user_map = {uid: idx + 1 for idx, uid in enumerate(sorted(df["user_id"].unique()))}
-    poi_map = {pid: idx + 1 for idx, pid in enumerate(sorted(df["poi_id"].unique()))}
+    user_map = {
+        int(uid): idx + 1 for idx, uid in enumerate(sorted(df["user_id"].unique()))
+    }
+    poi_map = {str(pid): idx + 1 for idx, pid in enumerate(sorted(df["poi_id"].unique()))}
 
     if not pd.api.types.is_integer_dtype(df["category"]):
-        cat_map = {cid: idx + 1 for idx, cid in enumerate(sorted(df["category"].unique()))}
+        cat_map = {
+            str(cid): idx + 1 for idx, cid in enumerate(sorted(df["category"].unique()))
+        }
         df["category"] = df["category"].map(cat_map).astype(int)
     else:
         cat_map = {}
@@ -172,7 +227,7 @@ def save_results(
         "final_train_metrics": train_metrics,
     }
     with open(results_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+        json.dump(to_json_safe(payload), f, indent=2)
 
 
 def run_name(cfg: TrainConfig) -> str:
