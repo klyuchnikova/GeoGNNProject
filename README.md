@@ -183,26 +183,33 @@ foursquare_nyc_plain_flashback
 foursquare_nyc_enhanced_graph_flashback
 foursquare_nyc_graph_memory_graph_flashback
 ```
+## Results
 
-## Current Gowalla results
+The table below summarizes the obtained results for the Austin Gowalla subset and the new Foursquare NYC/Tokyo runs. Paper-reference rows are included only as external reference points and are not directly comparable, because they use the full processed Gowalla dataset and a different evaluation protocol.
 
-These are the results already obtained from the previous Kaggle runs and the additional graph-memory archive. The Foursquare rows are intentionally left for the new Kaggle run.
+| Model                                     | Dataset / protocol             |      Acc@1 |      Acc@5 |     Acc@10 |      MAP@5 |     MAP@10 |        MRR |
+| ----------------------------------------- | ------------------------------ | ---------: | ---------: | ---------: | ---------: | ---------: | ---------: |
+| Global popularity                         | Gowalla Austin common split    |     0.0136 |     0.0519 |     0.0846 |     0.0288 |     0.0333 |     0.0393 |
+| Personal popularity                       | Gowalla Austin common split    |     0.1021 |     0.2381 |     0.3044 |     0.1513 |     0.1600 |     0.1688 |
+| Original-like Graph-Flashback             | Gowalla Austin paper-like/rank |     0.0791 |     0.1641 |     0.2032 |     0.1105 |     0.1158 |     0.1232 |
+| Enhanced Graph-Flashback                  | Gowalla Austin common split    |     0.1149 |     0.2507 |     0.3214 |     0.1643 |     0.1737 |     0.1852 |
+| Enhanced Graph-Flashback                  | Gowalla Austin min20/20        |     0.1329 |     0.2882 |     0.3631 |     0.1898 |     0.1998 |     0.2117 |
+| **Graph-memory Enhanced Graph-Flashback** | **Gowalla Austin min20/20**    | **0.1422** | **0.2932** | **0.3740** | **0.1974** | **0.2081** | **0.2201** |
+| Plain Flashback                           | Foursquare NYC min20/20        |     0.2973 |     0.6252 |     0.7100 |     0.4238 |     0.4353 |     0.4415 |
+| Enhanced Graph-Flashback                  | Foursquare NYC min20/20        |     0.3143 |     0.6384 |     0.7253 |     0.4366 |     0.4485 |     0.4547 |
+| **Graph-memory Enhanced Graph-Flashback** | **Foursquare NYC min20/20**    | **0.3206** | **0.6492** | **0.7378** | **0.4460** | **0.4580** | **0.4642** |
+| Plain Flashback                           | Foursquare Tokyo min20/20      |     0.2444 |     0.5298 |     0.6300 |     0.3505 |     0.3640 |     0.3729 |
+| Enhanced Graph-Flashback                  | Foursquare Tokyo min20/20      |     0.2586 |     0.5342 |     0.6347 |     0.3605 |     0.3741 |     0.3831 |
+| **Graph-memory Enhanced Graph-Flashback** | **Foursquare Tokyo min20/20**  |     0.2568 | **0.5427** | **0.6457** | **0.3628** | **0.3768** | **0.3860** |
+| Flashback, paper reference                | Full Gowalla                   |     0.1158 |     0.2754 |     0.3479 |          — |          — |     0.1925 |
+| Graph-Flashback, paper reference          | Full Gowalla                   |     0.1512 |     0.3425 |     0.4256 |          — |          — |     0.2422 |
 
-| Model | Dataset / protocol | Acc@1 | Acc@5 | Acc@10 | MAP@5 | MAP@10 | MRR |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Global popularity | Austin common split | 0.0136 | 0.0519 | 0.0846 | 0.0288 | 0.0333 | 0.0393 |
-| Personal popularity | Austin common split | 0.1021 | 0.2381 | 0.3044 | 0.1513 | 0.1600 | 0.1688 |
-| Original-like Graph-Flashback | Austin paper-like/rank | 0.0791 | 0.1641 | 0.2032 | 0.1105 | 0.1158 | 0.1232 |
-| Enhanced Graph-Flashback | Austin common split | 0.1149 | 0.2507 | 0.3214 | 0.1643 | 0.1737 | 0.1852 |
-| Enhanced Graph-Flashback | Austin min20/20 | 0.1329 | 0.2882 | 0.3631 | 0.1898 | 0.1998 | 0.2117 |
-| Graph-memory Enhanced Graph-Flashback | Austin min20/20 | **0.1422** | **0.2932** | **0.3740** | **0.1974** | **0.2081** | **0.2201** |
-| Flashback, paper reference | Full Gowalla | 0.1158 | 0.2754 | 0.3479 | — | — | 0.1925 |
-| Graph-Flashback, paper reference | Full Gowalla | 0.1512 | 0.3425 | 0.4256 | — | — | 0.2422 |
-| Plain Flashback | Foursquare NYC min20/20 | to run | to run | to run | to run | to run | to run |
-| Enhanced Graph-Flashback | Foursquare NYC min20/20 | to run | to run | to run | to run | to run | to run |
-| Graph-memory Enhanced Graph-Flashback | Foursquare NYC min20/20 | to run | to run | to run | to run | to run | to run |
+### Notes
 
-Important: paper-reference rows are not directly comparable to Austin rows, because the paper uses the full processed Gowalla dataset and a different protocol. They are included only as an external reference point.
+* The strongest Gowalla Austin result is obtained by the graph-memory enhanced variant on the min20/20 filtered protocol.
+* The strongest Foursquare NYC result is also obtained by the graph-memory enhanced variant.
+* On Foursquare Tokyo, the graph-memory enhanced variant gives the best MRR, Acc@5, Acc@10, MAP@5 and MAP@10, while the enhanced Graph-Flashback variant has the highest Acc@1.
+* Paper-reference rows are not directly comparable with the Austin subset experiments, because the paper uses the full processed Gowalla dataset and a different protocol.
 
 ## Summary files produced by the runners
 
