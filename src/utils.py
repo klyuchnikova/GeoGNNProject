@@ -32,6 +32,9 @@ class TrainConfig:
     num_layers: int = 2
     num_heads: int = 4
     dropout: float = 0.0
+    gcn_layers: int = 2
+    geo_dist_km: float = 0.5
+    max_geo_neighbors: int = 10
     min_user_visits: int = 10
     min_poi_visits: int = 10
     use_kcore: bool = True

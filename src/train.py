@@ -10,12 +10,14 @@ from data import (
     PoiDataset,
     SequenceBuilder,
     TemporalSplitter,
+    build_poi_graphs,
     collate_fn,
     filter_pipeline,
 )
 from data.filters import FilterConfig
 from evaluate import Evaluator, print_metrics
 from models.gugen import GuGen, GuGenConfig
+from models.gugen_graph import GuGenGraph, GuGenGraphConfig
 from models.lstm import LstmConfig, LstmNextPOI
 from utils import (
     TrainConfig,
@@ -95,10 +97,10 @@ def build_dataloaders(cfg: TrainConfig, filter_cfg: FilterConfig, logger):
         "num_categories": int(df["category"].max()) + 1,
     }
     data_stats = {**raw_stats, **filtered_stats, **sample_stats, **vocab, "mappings": mappings}
-    return train_loader, val_loader, test_loader, vocab, data_stats
+    return train_loader, val_loader, test_loader, vocab, data_stats, train_df
 
 
-def build_model(cfg: TrainConfig, vocab: dict):
+def build_model(cfg: TrainConfig, vocab: dict, graphs=None):
     if cfg.model == "gugen":
         model_cfg = GuGenConfig(
             num_pois=vocab["num_pois"],
@@ -121,6 +123,21 @@ def build_model(cfg: TrainConfig, vocab: dict):
         )
         return LstmNextPOI(model_cfg)
 
+    if cfg.model == "gugen_graph":
+        if graphs is None:
+            raise ValueError("gugen_graph requires POI graphs built from the training split")
+        model_cfg = GuGenGraphConfig(
+            num_pois=vocab["num_pois"],
+            num_users=vocab["num_users"],
+            num_categories=vocab["num_categories"],
+            hidden_dim=cfg.hidden_dim,
+            num_heads=cfg.num_heads,
+            num_layers=cfg.num_layers,
+            gcn_layers=cfg.gcn_layers,
+            dropout=cfg.dropout,
+        )
+        return GuGenGraph(model_cfg, graphs)
+
     raise ValueError(f"Unsupported model: {cfg.model}")
 
 
@@ -142,11 +159,29 @@ def train(cfg: TrainConfig) -> dict:
     )
 
     logger.info("Starting training with config: %s", asdict(cfg))
-    train_loader, val_loader, test_loader, vocab, data_stats = build_dataloaders(
+    train_loader, val_loader, test_loader, vocab, data_stats, train_df = build_dataloaders(
         cfg, filter_cfg, logger
     )
 
-    model = build_model(cfg, vocab).to(device)
+    graphs = None
+    if cfg.model == "gugen_graph":
+        graphs = build_poi_graphs(
+            train_df,
+            num_pois=vocab["num_pois"],
+            num_categories=vocab["num_categories"],
+            geo_dist_km=cfg.geo_dist_km,
+            max_geo_neighbors=cfg.max_geo_neighbors,
+        )
+        graph_stats = {
+            "transition_edges": int(graphs.transition_edge_index.size(1)),
+            "geo_edges": int(graphs.geo_edge_index.size(1)),
+            "geo_dist_km": cfg.geo_dist_km,
+            "gcn_layers": cfg.gcn_layers,
+        }
+        data_stats["graph_stats"] = graph_stats
+        logger.info("Built POI graphs from training split: %s", graph_stats)
+
+    model = build_model(cfg, vocab, graphs=graphs).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=cfg.lr,
@@ -242,7 +277,7 @@ def train(cfg: TrainConfig) -> dict:
 
 def parse_args() -> TrainConfig:
     parser = argparse.ArgumentParser(description="Train POI recommendation models")
-    parser.add_argument("--model", default="gugen", choices=["gugen", "lstm"])
+    parser.add_argument("--model", default="gugen", choices=["gugen", "gugen_graph", "lstm"])
     parser.add_argument("--dataset", default="foursquare", choices=["foursquare", "gowalla"])
     parser.add_argument("--city", default="NYC")
     parser.add_argument("--data-root", default="../input")
@@ -256,6 +291,9 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--num-heads", type=int, default=4)
     parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--gcn-layers", type=int, default=2)
+    parser.add_argument("--geo-dist-km", type=float, default=0.5)
+    parser.add_argument("--max-geo-neighbors", type=int, default=10)
     parser.add_argument("--min-user-visits", type=int, default=10)
     parser.add_argument("--min-poi-visits", type=int, default=10)
     parser.add_argument("--no-kcore", action="store_true")
@@ -286,6 +324,9 @@ def parse_args() -> TrainConfig:
         num_layers=args.num_layers,
         num_heads=args.num_heads,
         dropout=args.dropout,
+        gcn_layers=args.gcn_layers,
+        geo_dist_km=args.geo_dist_km,
+        max_geo_neighbors=args.max_geo_neighbors,
         min_user_visits=args.min_user_visits,
         min_poi_visits=args.min_poi_visits,
         use_kcore=not args.no_kcore,

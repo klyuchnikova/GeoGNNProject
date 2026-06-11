@@ -6,7 +6,7 @@ parser = argparse.ArgumentParser(description="Summarize experiment results")
 parser.add_argument(
     "--model",
     default="gugen",
-    choices=["gugen", "lstm"],
+    choices=["gugen", "gugen_graph", "lstm"],
     help="Model prefix to scan under results/",
 )
 args = parser.parse_args()
