@@ -1,0 +1,652 @@
+% Template for Journal Submission to Cognitive Security Institute Press (CSI Press) journals
+% The original template was derived from Michael Shell's (http://www.michaelshell.org/) IEEE 1.8b standard for Computer Science Journals. 
+
+\documentclass[12pt, journal]{IEEEtran}
+\usepackage{lipsum}
+\usepackage{cite}
+\usepackage{amsmath}
+\usepackage{algorithmic}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{orcidlink}
+\usepackage{stfloats}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[utf8]{inputenc}
+\usepackage{newunicodechar}
+\newunicodechar{∼}{\textasciitilde{}}
+\usepackage{url}
+
+\bibliographystyle{IEEEtran}
+
+
+% The latest version and documentation of subfig.sty can be obtained at:
+% http://www.ctan.org/pkg/subfig
+\usepackage[caption=false,font=footnotesize]{subfig}
+
+\begin{document}
+
+\title{POI Graphs under Spatial Noise and Temporal Drift}
+
+\author{\IEEEauthorblockA{Klyuchnikova Ulyana,
+Urazmetova Margarita} \\
+\vspace{4pt}
+\IEEEauthorblockA{\footnotesize
+Email: udklyuchnikova@edu.hse.ru, mrurazmetova@edu.hse.ru,
+}
+}
+
+\IEEEaftertitletext{\vspace{-1\baselineskip}\noindent\begin{abstract}
+Next Point-of-Interest (POI) recommendation is a central task in location-based social networks, aiming to predict a user’s future destinations from historical mobility trajectories. Recent advances in graph neural networks and sequential modeling have significantly improved recommendation accuracy by incorporating spatial transitions, contextual information, and high-order behavioral dependencies. However, real-world mobility data are often affected by GPS inaccuracies, sparse observations, and temporal distribution shifts caused by seasonal behavior changes, venue popularity dynamics, and evolving user preferences. Existing evaluations are commonly conducted on heavily preprocessed datasets with occurrence-based filtering and static train-test assumptions, making the robustness of modern POI recommendation methods under realistic conditions insufficiently understood.
+
+This project investigates the robustness of next-POI recommendation methods under spatial perturbation and temporal drift. Rather than proposing a new state-of-the-art architecture, we develop a systematic evaluation framework for comparing representative sequential and graph-based recommendation models under varying preprocessing settings and controlled spatial perturbations. Experiments will be conducted on publicly available Foursquare and Gowalla datasets using standard ranking metrics including Acc@k, MAP@k and MRR.
+
+The goal of this work is to provide practical insights into the reliability and deployment readiness of modern POI recommendation systems in noisy and non-stationary environments.
+\end{abstract}
+\noindent\begin{IEEEkeywords}
+POI recommendation, GNN, spatial noise, robustness evaluation, comparative analysis
+\end{IEEEkeywords}
+\vspace{1\baselineskip}}
+
+\maketitle
+
+\section{Introduction}
+\IEEEPARstart{L}{ocation-based} social networks (LBSNs) such as Foursquare and Gowalla have enabled the large-scale collection of human mobility data through user check-ins and location-sharing services. These data have driven substantial research interest in next Point-of-Interest (POI) recommendation, a task that aims to predict the next location a user is likely to visit based on historical trajectories. Accurate next-POI recommendation has important applications in urban computing, personalized services, tourism, advertising, and intelligent transportation systems.
+
+Early approaches to next-POI recommendation primarily relied on Markov chains and recurrent neural networks to model sequential mobility behavior. More recently, graph-based methods have become dominant due to their ability to capture complex transition patterns and collaborative relations between POIs. Graph neural networks (GNNs), attention mechanisms, and Transformer-based architectures have demonstrated strong performance by modeling spatial proximity, trajectory transitions, and contextual dependencies across user mobility graphs. Recent work has further explored multi-graph fusion and contrastive learning to improve representation quality under sparse check-in data.
+
+Although recent POI recommendation methods incorporate sophisticated graph structures and self-supervised learning objectives, relatively little attention has been devoted to robustness evaluation under spatial perturbation and temporal drift. Existing studies typically employ random or short-horizon train-test splits and evaluate models on clean benchmark datasets, which may overestimate real-world generalization performance or result in simple difference in training data between models. As a result, it remains unclear which architectural mechanisms contribute most to robustness under noisy and non-stationary conditions.
+
+This work addresses this gap through a systematic comparative study of representative sequential and graph-based next-POI recommendation methods under controlled spatial and temporal distribution shifts. Instead of introducing another complex recommendation architecture, the primary goal of this project is to evaluate how existing methods behave when deployed with varying noise levels.
+
+\section{Related Work}
+
+Contrastive learning has recently emerged as an effective self-supervised learning strategy for recommendation systems. The general idea is to generate multiple augmented views of graph-structured data and learn representations by maximizing agreement between positive pairs while separating negative samples.
+
+Several foundational methods introduced contrastive objectives for graph recommendation. SGL \cite{wu2021self} applies node and edge dropout to generate augmented graph views, while SimGCL \cite{yu2022simgcl} introduces perturbations directly in the embedding space to improve robustness and representation consistency. NCL \cite{lin2022ncl} further incorporates neighborhood-enriched contrastive objectives to capture structural information more effectively.
+
+In the POI recommendation domain, contrastive learning is commonly used to alleviate sparsity and improve multi-view representation learning. CLLP \cite{zhou2024cllp} combines spatiotemporal preference modeling with contrastive objectives, while MGMCL \cite{jiang2025mgmcl} aligns representations across multiple mobility graphs through local and global contrastive learning strategies.
+
+Although these approaches improve representation quality and generalization, contrastive augmentations are typically designed for representation learning rather than systematic robustness evaluation. In particular, the effects of controlled spatial perturbation and temporal distribution shift on next-POI recommendation models remain insufficiently explored.
+
+
+\section{Datasets and Preprocessing}
+We use three real-world check-in datasets:
+\begin{itemize}
+\item \textbf{TSMC2014\_NYC}: 227,428 check-ins, 21,000 POIs, 1,083 users (Foursquare, Apr 2012--Feb 2013) \cite{yang2015modeling}
+\item \textbf{TSMC2014\_TKY}: 537,703 check-ins, 18,000 POIs, 2,293 users (Foursquare, Apr 2012--Feb 2013) \cite{yang2015modeling}
+\item \textbf{Gowalla (global)}: 6.4M check-ins, 1.28M POIs, 107,092 users with check-ins (Feb 2009--Oct 2010) \cite{cho2011friendship}
+\end{itemize}
+
+\subsection{Exploratory Data Analysis}
+
+\paragraph{Gowalla}
+
+We analyzed the full SNAP Gowalla check-in dataset before graph construction. The raw file contains check-ins with user IDs, timestamps, coordinates, and POI IDs over the period February 2009--October 2010.
+
+SNAP Gowalla does not include POI names or semantic categories, so we enriched POIs with Figshare Gowalla metadata \cite{figshare_gowalla_data}. Category metadata covers 96.8\% of POIs and 97.3\% of check-ins. POI names cover only 0.5\% of POIs and 0.2\% of check-ins; therefore, the analysis focuses mainly on POI categories.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.2}
+\caption{Cleaned Gowalla Dataset Summary}
+\label{tab:gowalla_summary}
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Statistic} & \textbf{Value} \\
+\hline
+Raw check-ins & 6,442,892 \\
+Cleaned check-ins & 6,442,262 \\
+Users & 107,092 \\
+POIs & 1,280,956 \\
+Category coverage by POI & 96.8\% \\
+Category coverage by check-in & 97.3\% \\
+POI name coverage by POI & 0.5\% \\
+POI name coverage by check-in & 0.2\% \\
+\hline
+\end{tabular}
+\end{table}
+
+Fig.~\ref{fig:gowalla_categories} shows the most frequent POI categories. The leading categories include corporate offices, coffee shops, grocery stores, apartments, train stations, malls, and transportation-related venues. This indicates that Gowalla contains heterogeneous urban mobility patterns rather than one dominant type of location.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{images/top_categories_by_checkins.png}
+\caption{Top Gowalla POI categories by number of check-ins.}
+\label{fig:gowalla_categories}
+\end{figure}
+
+Fig.~\ref{fig:category_hour_profile} shows row-normalized hourly profiles for the most frequent categories. Each row sums to one, so the figure compares the daily rhythm within each category. The profiles differ substantially across categories, which confirms that time-of-day information is relevant for next-POI modeling.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{images/category_hour_row_normalized_heatmap.png}
+\caption{Hourly profile of top POI categories, row-normalized within each category.}
+\label{fig:category_hour_profile}
+\end{figure}
+
+The POI distribution is highly long-tailed (Fig.~\ref{fig:poi_long_tail}). In the cleaned dataset, 17,886 POIs cover 25\% of check-ins, 101,432 cover 50\%, 346,882 cover 75\%, and 709,806 cover 90\%. This confirms strong sparsity at the POI level and motivates filtering, graph augmentation, and careful treatment of infrequent locations.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{images/poi_popularity_long_tail.png}
+\caption{POI popularity long tail and cumulative check-in coverage.}
+\label{fig:poi_long_tail}
+\end{figure}
+
+Additional EDA results show that user activity is also uneven: most users have relatively few check-ins, while a small subset is much more active. Repeat-visit analysis shows that trajectories contain both returns to previously visited POIs and exploration of new locations. We also constructed consecutive POI transitions and measured transition time gaps and distances. These results indicate that transition graph construction should account for temporal windows and spatial distance, rather than treating all consecutive check-ins as equally meaningful mobility transitions.
+
+Fig.~\ref{fig:temporal_drift} summarizes temporal drift. Monthly active users and active POIs change substantially over time, while the overlap of top POIs across adjacent months is not fully stable. This supports chronological train/validation/test splitting instead of random splitting, since future mobility behavior may differ from past behavior.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{images/temporal_drift_summary.png}
+\caption{Temporal drift in monthly Gowalla activity and top-entity stability.}
+\label{fig:temporal_drift}
+\end{figure}
+
+Overall, the EDA shows three properties relevant to our study: high category coverage, strong long-tail sparsity, and temporal drift. These properties motivate robustness evaluation under spatial noise and temporal distribution shift. Additional EDA tables, preprocessing checks, and visualizations are provided in the supplementary notebook \cite{gowalla_eda_notebook}.
+
+\paragraph{Foursquare}
+
+We also considered Foursquare \cite{yang2015modeling} which is a common LBSN dataset. This dataset contains check-ins in NYC (New York City) and TKY (Tokyo) collected for about 10 month (from 12 April 2012 to 16 February 2013). Each check-in is associated with its time stamp, its GPS coordinates and its semantic meaning (represented by fine-grained venue-categories).
+
+The general statistics (Table \ref{tab:basic_stats}) show that Tokyo contains roughly twice as much data as NYC, with both user count and total check-ins approximately doubling. Foursquare appears to have applied some filtering based on minimum check-ins per user, though the threshold appears to be relatively low, so this should not pose a concern for analysis.
+
+\begin{table}[!t]
+\centering
+\caption{Basic Dataset Statistics}
+\label{tab:basic_stats}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{New York City} & \textbf{Tokyo} \\
+\midrule
+Total Check-ins & 227,428 & 573,598 \\
+Unique Users & 1,083 & 2,293 \\
+Unique Venues & 38,333 & 61,858 \\
+Unique Categories & 251 & 247 \\
+Avg Check-ins per User & 210.0 & 250.2 \\
+Median Check-ins per User & 153 & 173 \\
+Min Check-ins per User & 100 & 100 \\
+Max Check-ins per User & 2,697 & 2,991 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A more detailed examination of user activity distributions (Fig. \ref{fig:user_distribution}) reveals that NYC and Tokyo exhibit rather similar patterns, although Tokyo users appear slightly more active. Both datasets contain anomalous users with over 2,500 check-ins.
+
+Category-based behavior differs significantly between the two cities. The top categories (Fig. \ref{fig:category_comparison}), shown both by total check-ins and unique users, reveal that rankings not only differ across regions but are also substantially influenced by highly active users. For instance, the 'Office' category ranks high in NYC but is absent from Tokyo's top list. Similarly, bars appear as a top priority for New York users, yet rank at best fifth in Tokyo (after Japanese restaurants). The difference between ranking methods also reveals variation in user activity patterns. Train stations in Tokyo rank first by a large margin (∼150K check-ins) when considering total check-ins, but when measured by unique users, they surpass Japanese restaurants by only a few hundred. This suggests that different venue types exhibit distinct user engagement patterns — it is reasonable to assume that a user checking into a train station or subway would do so twice per workday, unlike entertainment venues.
+
+Examining hourly, daily, and monthly activity patterns (Fig. \ref{fig:temporal_comparison}), the data shows clear dependence on time of day and month. User activity decreases at night and exhibits pronounced peaks during commuting hours and lunch breaks. The data collection spans from April to February, showing peaks from April to July, followed by a decline in August and September, with no data for October. A second period of increased activity occurs from November to January.
+
+We also examined whether activity patterns vary by category. The row-normalized heatmaps (Fig. \ref{fig:heatmap_comparison}) show that subway and train stations in both NYC and Tokyo peak in the morning, with NYC users arriving at work shortly after. Bars in New York are popular from after work until dawn, while Tokyo residents frequent ramen shops and Japanese restaurants both for lunch and after-work dinner. Comparing hourly activity between weekdays and weekends (Fig. \ref{fig:weekend_comparison}) shows that check-in spikes generally occur on weekdays at similar times in both cities.
+
+Inspecting temporal patterns more closely using a 7-day rolling window (Fig. \ref{fig:trend_comparison}) reveals similar daily check-in patterns for NYC and Tokyo. User activity spikes in the early months of 2012 (April–July), declines from July to October, and then exhibits another spike with a more stable trend line. This may indicate rising app popularity due to advertising campaigns or other external factors; in any case, visible time-based trends are present.
+
+The relationship between categories and the number of unique venues (Fig. \ref{fig:diversity_comparison}) appears similar between NYC and Tokyo, with points concentrated in an almost linear relationship and some anomalous high-outlier points present in both datasets. Comparing category choice diversity among users (Fig. \ref{fig:entropy_comparison}), most users fall below 3 bits in both datasets, with medians of 2.9 for NYC and 2.38 for Tokyo.
+
+A minor additional observation: HDBSCAN clustering of POIs (Fig. \ref{fig:cluster_comparison}) reveals numerous small clusters, often elongated and likely following street patterns, with both cities exhibiting concentrated urban centers.
+
+Overall, the EDA shows that in both NYC and Tokyo user activity follows power-law distributions. The data exhibits commuting peaks, dramatic weekend shifts and seasonal effects. However between them category preferences diverge sharply, with NYC also winning by the level of user activity and diverse venues and categories. Full code and results can be found in open source \cite{foursquare_eda_notebook}.
+
+\section{Models}
+
+This section describes the main model families used in our study. The selected methods represent different levels of complexity in next-POI recommendation: a recurrent sequential model, a graph-enhanced Transformer model, and a global user-graph model. Although the original papers differ in implementation details, they follow a common idea: user mobility is modeled as a sequence of check-ins, while POI, spatial, temporal, and sometimes user-relation information is encoded into dense representations and used to predict the next visited POI.
+
+\subsection{Problem Formulation}
+
+Let $\mathcal{U}=\{u_1,u_2,\ldots,u_m\}$ be the set of users and let $\mathcal{P}=\{p_1,p_2,\ldots,p_n\}$ be the set of POIs. Each POI $p_i$ has a unique identifier and geographic coordinates, usually represented by latitude and longitude.
+
+A check-in record is defined as
+\begin{equation}
+    v_i = (u_i, p_i, t_i),
+\end{equation}
+where user $u_i$ visits POI $p_i$ at timestamp $t_i$. For a user $u$, their mobility history is represented as a time-ordered trajectory
+\begin{equation}
+    T_u = \{v_1, v_2, \ldots, v_T\}.
+\end{equation}
+
+The goal of next-POI recommendation is to predict the next POI $p_{T+1}$ given the user's historical trajectory:
+\begin{equation}
+    \hat{p}_{T+1} = \arg\max_{p \in \mathcal{P}} P(p \mid T_u, u).
+\end{equation}
+In practice, the model outputs a score for each candidate POI, and the POIs are ranked according to these scores.
+
+\subsection{LSTM-Based Sequential Model}
+
+The simplest baseline family is based on recurrent neural networks, especially LSTM models. In next-POI recommendation, the input at each step is usually an embedding of the currently visited POI, optionally combined with temporal and spatial context. The LSTM processes the check-in sequence step by step and produces a hidden state that summarizes the user's recent and historical behavior.
+
+For a check-in at time step $t$, the input can be written as
+\begin{equation}
+    x_t = e_{p_t} \oplus e_{u} \oplus e_{\Delta t_t} \oplus e_{\Delta d_t},
+\end{equation}
+where $e_{p_t}$ is the embedding of the visited POI, $e_u$ is the user embedding, $\Delta t_t$ is the time interval between two consecutive check-ins, $\Delta d_t$ is the geographic distance between two consecutive POIs, and $\oplus$ denotes concatenation.
+
+The standard LSTM updates its hidden state as
+\begin{equation}
+    h_t, c_t = \mathrm{LSTM}(x_t, h_{t-1}, c_{t-1}),
+\end{equation}
+where $h_t$ is the hidden state and $c_t$ is the memory cell. The next POI is predicted from the final hidden state:
+\begin{equation}
+    \hat{y}_{t+1} = \mathrm{softmax}(W_o h_t + b_o).
+\end{equation}
+
+A more advanced version is ST-LSTM \cite{zhao2018nextspatiotemporallstmmodel}, which explicitly models the effect of time and distance intervals. The intuition is simple: a visit that happened recently and nearby is usually more important for predicting the next POI than a visit that happened long ago or far away. Therefore, ST-LSTM introduces time-aware and distance-aware gates to control how much information should be kept or forgotten.
+
+Compared with graph-based models, LSTM-based methods mainly model the trajectory as a linear sequence. They are useful as simple and interpretable baselines, but they do not directly capture high-order POI relations, global transition patterns, or collaborative signals from other users.
+
+\subsection{GETNext}
+
+GETNext \cite{yang2022getnext} is a graph-enhanced Transformer model for next-POI recommendation. Its main idea is to improve sequential prediction by using a global trajectory flow map. Instead of only considering each user's trajectory independently, GETNext constructs a graph from all user trajectories. In this graph, POIs are nodes, and transitions between consecutive check-ins form directed edges.
+
+Formally, a trajectory transition graph can be written as
+\begin{equation}
+    G_{tr} = (\mathcal{P}, \mathcal{E}_{tr}),
+\end{equation}
+where an edge $(p_i,p_j) \in \mathcal{E}_{tr}$ exists if users frequently move from POI $p_i$ to POI $p_j$. The edge weight may be based on the observed transition frequency:
+\begin{equation}
+    w_{ij} = \frac{\mathrm{count}(p_i \rightarrow p_j)}
+    {\sum_{p_k \in \mathcal{P}} \mathrm{count}(p_i \rightarrow p_k)}.
+\end{equation}
+
+A graph neural network is then used to learn POI embeddings from this global transition structure. A general graph aggregation step can be written as
+\begin{equation}
+    h_i^{(l+1)} = \sigma \left( W^{(l)} h_i^{(l)} +
+    \sum_{j \in \mathcal{N}(i)} \alpha_{ij} W^{(l)} h_j^{(l)} \right),
+\end{equation}
+where $h_i^{(l)}$ is the embedding of POI $p_i$ at layer $l$, $\mathcal{N}(i)$ is the neighborhood of $p_i$, and $\alpha_{ij}$ controls the importance of neighbor $p_j$.
+
+After obtaining graph-enhanced POI embeddings, GETNext uses a Transformer to model the user's check-in sequence. The Transformer is better than a plain recurrent model at capturing long-range dependencies because self-attention allows each check-in to directly attend to other check-ins in the sequence:
+\begin{equation}
+    \mathrm{Attention}(Q,K,V) =
+    \mathrm{softmax}\left(\frac{QK^\top}{\sqrt{d}}\right)V.
+\end{equation}
+
+The main strength of GETNext is that it combines global transition knowledge with sequence modeling. The graph captures common movement patterns shared by many users, while the Transformer captures the order and context of a specific user's trajectory. However, GETNext mainly focuses on POI transition flow and does not explicitly build a global user-user relation graph.
+
+\subsection{GUGEN}
+
+GUGEN \cite{zuo2024gugen} is a graph-enhanced next-POI recommendation model that combines trajectory modeling with global and user-specific graph structures. The original motivation is that next-POI prediction depends not only on a user's own recent history, but also on global POI relations, geographic proximity, and recurring POI patterns within a user's past behavior.
+
+The published implementation consists of five modules:
+\begin{itemize}
+    \item \textbf{GlobalGraphNet}: a GCN/GAT over a global POI graph encoding POI, category, and discretized GPS features;
+    \item \textbf{GlobalDistNet}: a distance graph over POIs capturing geographic relations;
+    \item \textbf{UserGraphNet}: a per-user POI graph built from each user's historical visits;
+    \item \textbf{UserHistoryNet}: three GRU branches over POI, category, and temporal features (hour and weekday);
+    \item \textbf{TransformerModel}: a 1024-dimensional Transformer that fuses graph signals with trajectory history to predict the next POI.
+\end{itemize}
+
+Formally, the original model combines global graph signals $g^{global}$, distance graph signals $g^{dist}$, user graph signals $g^{user}$, and trajectory history $h_t$:
+\begin{equation}
+    \hat{y}_{t+1} =
+    \mathrm{Transformer}\!\left(
+    h_t,\; g^{global},\; g^{dist},\; g^{user}
+    \right).
+\end{equation}
+
+Training in the original code uses full user trajectories stored as preprocessed pickle files. For a trajectory of length $T$, the model is trained with cross-entropy loss over \emph{all timesteps}, while evaluation reports Acc@$k$, MAP@$k$, and MRR on the last timestep only. On Foursquare-NYC, the original paper reports Acc@1 $\approx 0.298$, Acc@5 $\approx 0.593$, and MRR $\approx 0.383$.
+
+For this project, we do \textbf{not} reproduce the full graph-based GUGEN architecture. Instead, we implement a simplified sequential variant, denoted \textbf{GuGen-Lite}, designed to run inside a common experimental framework shared with other baselines (e.g., LSTM). The goal is not to match the original paper numbers, but to compare preprocessing strategies and model families under identical data splits, metrics, and training protocols.
+
+Our implementation differs from the original GUGEN in several important ways:
+
+\begin{enumerate}
+    \item \textbf{Model complexity.} GuGen-Lite removes all graph encoders (global POI graph, distance graph, and per-user graph). It uses POI, user, and category embeddings, a GRU history encoder, a Transformer sequence encoder, and a linear prediction head.
+    \item \textbf{Input features.} We use only POI ID, user ID, and category ID. Hour, weekday, and discretized latitude/longitude bins are not included.
+    \item \textbf{Sample construction.} Instead of one sample per full trajectory, we build sliding windows of length $L=20$ with stride $1$. Each sample uses 20 consecutive check-ins to predict the next POI.
+    \item \textbf{Data split.} We apply a per-user chronological split into train (80\%), validation (10\%), and test (10\%). The original code uses preprocessed train/test pickles without an explicit validation split.
+    \item \textbf{Training objective.} We optimize cross-entropy only on the \emph{last position} of each window, while evaluation also uses only the last predicted POI. The original model trains on all timesteps in a trajectory.
+    \item \textbf{Preprocessing.} We apply a configurable filter pipeline (minimum visit counts, iterative $k$-core filtering, optional entropy/dominance filters, and optional geographic bounding boxes for city subsets). The original paper relies on a fixed preprocessing script (\texttt{build\_trajectory\_map.py}) that is not included in our repository.
+\end{enumerate}
+
+\paragraph{GuGen-Lite forward pass.}
+For a batch of sliding-window samples, let $p_{1:L}$ be the POI sequence, $c_{1:L}$ the category sequence, and $u$ the user ID. We first encode history as
+\begin{equation}
+    h_t = \mathrm{GRU}\!\left(
+    e_{p_t} \oplus e_u \oplus e_{c_t}
+    \right), \quad t = 1,\ldots,L,
+\end{equation}
+then apply a Transformer encoder and predict the next POI from the final timestep:
+\begin{equation}
+    \hat{p}_{L+1} =
+    \arg\max_{p \in \mathcal{P}}
+    \mathrm{softmax}\!\left(
+    W \cdot \mathrm{Transformer}(h_{1:L})_L
+    \right).
+\end{equation}
+
+Because GuGen-Lite shares the same data loader, evaluation code, checkpointing, and result format as the LSTM baseline, differences in measured performance can be attributed to model capacity and architectural choices rather than preprocessing inconsistencies.
+
+\paragraph{GuGen-Graph: simplified graph-enhanced variant.}
+To incorporate graph neural networks without reproducing the full original preprocessing pipeline, we add \textbf{GuGen-Graph}, a middle-ground model that keeps the unified sliding-window protocol but enriches POI representations with two graphs built from the \emph{training split only}:
+\begin{itemize}
+    \item \textbf{Transition graph} $G_{tr}$: directed edges between consecutive POIs observed in training trajectories, weighted by transition frequency;
+    \item \textbf{Geo-spatial graph} $G_{geo}$: undirected edges between POIs whose mean coordinates are within 2\,km (Haversine distance), weighted by inverse distance.
+\end{itemize}
+Each POI node is initialized from learnable POI/category embeddings plus projected coordinates. Two GCN stacks propagate information on $G_{tr}$ and $G_{geo}$, and the resulting representations are fused before sequence modeling:
+\begin{equation}
+    e_p =
+    \mathrm{GCN}_{tr}(x_p, G_{tr})
+    \oplus
+    \mathrm{GCN}_{geo}(x_p, G_{geo}),
+\end{equation}
+where $x_p$ is the POI node feature vector. The fused POI embeddings are then fed into the same GRU + Transformer next-POI head as GuGen-Lite.
+
+\paragraph{Relation to the original paper.}
+Our Acc@1 values (about 0.13--0.22 on Foursquare for GuGen-Lite, depending on filtration) are lower than the original GUGEN result ($\approx 0.30$ on NYC). This gap is expected: even GuGen-Graph uses a much simpler graph construction than the published system (no per-user graphs, no distance-graph preprocessing, no hour/weekday features). GuGen-Lite and GuGen-Graph should therefore be interpreted as \emph{comparative baselines within our framework}, not as reproductions of the original GUGEN system.
+
+\subsection{Multi-Graph and Contrastive Models}
+
+Some recent models, such as MGMCL, go further by constructing multiple graphs and aligning their representations. A common design is to use at least two POI graphs:
+
+\begin{itemize}
+    \item a geospatial graph, where nearby POIs are connected;
+    \item a transition graph, where POIs are connected according to observed movement patterns.
+\end{itemize}
+
+The geospatial graph is usually defined as
+\begin{equation}
+    G_{geo} = (\mathcal{P}, \mathcal{E}_{geo}),
+\end{equation}
+where an edge exists if the distance between two POIs is below a threshold:
+\begin{equation}
+    (p_i,p_j) \in \mathcal{E}_{geo}
+    \quad \text{if} \quad
+    \mathrm{dist}(p_i,p_j) < \delta.
+\end{equation}
+
+The transition graph is constructed from consecutive check-ins:
+\begin{equation}
+    (p_i,p_j) \in \mathcal{E}_{seq}
+    \quad \text{if} \quad
+    p_j \text{ is visited after } p_i.
+\end{equation}
+
+These graphs encode different information. The geospatial graph captures the fact that users often visit nearby locations, while the transition graph captures actual movement behavior. Some methods use GCNs or attention-based GNNs for the spatial graph and gated graph neural networks for the transition graph.
+
+A simplified graph update can be written as
+\begin{equation}
+    h_i^{(l+1)} =
+    \sigma \left(
+    W_0 h_i^{(l)} +
+    \sum_{j \in \mathcal{N}(i)}
+    \alpha_{ij} W_1 h_j^{(l)}
+    \right).
+\end{equation}
+
+Recent approaches also use contrastive learning to make POI embeddings more stable. The basic idea is to create two views of the same graph, for example by dropping edges or perturbing connections, and then force the same POI to have similar embeddings in both views. A standard contrastive loss is
+\begin{equation}
+    \mathcal{L}_{cl}
+    =
+    -\log
+    \frac{
+    \exp(\mathrm{sim}(h_i,h_i')/\tau)
+    }{
+    \sum_{j}
+    \exp(\mathrm{sim}(h_i,h_j')/\tau)
+    },
+\end{equation}
+where $h_i$ and $h_i'$ are two embeddings of the same POI from different graph views, $\mathrm{sim}(\cdot)$ is usually cosine similarity, and $\tau$ is a temperature parameter.
+
+The final prediction model often combines graph embeddings with a sequential encoder such as Transformer or LSTM:
+\begin{equation}
+    r_t = e_{p_t}^{geo} \oplus e_{p_t}^{seq} \oplus e_u \oplus e_t,
+\end{equation}
+\begin{equation}
+    H = \mathrm{SeqEncoder}(r_1,r_2,\ldots,r_T),
+\end{equation}
+\begin{equation}
+    \hat{y}_{T+1} = \mathrm{softmax}(W H_T + b).
+\end{equation}
+
+These models are more expressive because they combine spatial proximity, transition behavior, user preference, and temporal context. At the same time, they are more complex and may be more sensitive to graph construction choices and preprocessing.
+
+\section{Experiments}
+
+\subsection{Experimental Setup}
+
+All models in this section are trained through a unified pipeline implemented in \texttt{src/train.py}. The pipeline has four stages:
+\begin{enumerate}
+    \item \textbf{Reading}: Foursquare NYC/TKY CSV files or Gowalla check-in files are loaded and mapped to a common schema (user ID, POI ID, timestamp, latitude, longitude, category).
+    \item \textbf{Filtering}: a configurable preprocessing pipeline is applied before ID remapping.
+    \item \textbf{Splitting}: for each user, check-ins are sorted by time and split chronologically into 80\% train, 10\% validation, and 10\% test.
+    \item \textbf{Sequence construction}: sliding windows of length 20 are built within each split; the model predicts the POI immediately following each window.
+\end{enumerate}
+
+\paragraph{Filtration strategies.}
+We compare six preprocessing settings on the same raw data:
+\begin{itemize}
+    \item \textbf{no\_filter}: minimum 2 visits per user and POI, no $k$-core;
+    \item \textbf{min\_10\_10}: at least 10 visits per user and POI;
+    \item \textbf{min\_20\_20}: at least 20 visits per user and POI;
+    \item \textbf{kcore\_10\_10}: iterative 10-core filtering on users and POIs;
+    \item \textbf{kcore\_20\_20}: iterative 20-core filtering;
+    \item \textbf{combined\_10\_10}: minimum 10 visits plus 10-core filtering.
+\end{itemize}
+Each experiment is identified by the filter name and stored separately in the results directory.
+
+\paragraph{Models.}
+We currently report results for three models trained under the same protocol:
+\begin{itemize}
+    \item \textbf{GuGen-Lite}: GRU + Transformer, hidden dimension 256, 3 Transformer layers, 8 attention heads;
+    \item \textbf{GuGen-Graph}: transition + geo-spatial GCN POI encoder (2 layers each), then GRU + Transformer with the same hidden size and depth as GuGen-Lite;
+    \item \textbf{LSTM baseline}: POI/user/category embeddings + 2-layer LSTM, hidden dimension 256, dropout 0.1.
+\end{itemize}
+Both models use Adam with learning rate $5 \times 10^{-4}$, weight decay $10^{-5}$, batch size 512, 20 epochs, cosine learning-rate decay, and early stopping with patience 3 on validation Acc@1. The best checkpoint is selected by validation performance and evaluated on the held-out test split.
+
+\paragraph{Metrics.}
+We report Acc@1, Acc@5, Acc@10, MAP@5, MAP@10, and MRR. For each test sample, ranking quality is computed from the model's prediction at the \emph{last timestep} of the 20-check-in window. Acc@$k$ measures whether the true next POI appears in the top-$k$ list; MAP@$k$ and MRR measure rank-sensitive retrieval quality.
+
+\subsection{Results: GuGen-Lite}
+
+Table~\ref{tab:gugen_acc1} summarizes GuGen-Lite Acc@1 across filtration settings. Stronger filtering consistently improves performance on all three datasets. The best configuration is \texttt{min\_20\_20} on NYC (Acc@1 = 0.1885) and \texttt{kcore\_20\_20} on TKY (Acc@1 = 0.2245) and Gowalla Austin (Acc@1 = 0.1427).
+
+\begin{table}[!t]
+\centering
+\caption{GuGen-Lite Acc@1 under different filtration settings.}
+\label{tab:gugen_acc1}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Dataset} & \textbf{no\_filter} & \textbf{min\_10\_10} & \textbf{min\_20\_20} & \textbf{kcore\_10\_10} & \textbf{kcore\_20\_20} & \textbf{combined\_10\_10} \\
+\midrule
+Foursquare NYC & 0.1338 & 0.1481 & \textbf{0.1885} & 0.1680 & 0.1830 & 0.1680 \\
+Foursquare TKY & 0.1646 & 0.1949 & 0.2137 & 0.1949 & \textbf{0.2245} & 0.1949 \\
+Gowalla Austin & 0.0911 & 0.1272 & 0.1427 & 0.1272 & \textbf{0.1427} & 0.1272 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:gugen_best} reports the best test metrics per dataset for GuGen-Lite.
+
+\begin{table}[!t]
+\centering
+\caption{Best GuGen-Lite results per dataset.}
+\label{tab:gugen_best}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Dataset} & \textbf{Best filter} & \textbf{Acc@1} & \textbf{Acc@5} & \textbf{Acc@10} & \textbf{MRR} \\
+\midrule
+Foursquare NYC & min\_20\_20 & 0.1885 & 0.5634 & 0.7322 & 0.3548 \\
+Foursquare TKY & kcore\_20\_20 & 0.2245 & 0.5496 & 0.6707 & 0.3694 \\
+Gowalla Austin & kcore\_20\_20 & 0.1427 & 0.3026 & 0.3826 & 0.2227 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The largest absolute Acc@1 gains from filtering are 5.47 points on NYC (0.1338 $\rightarrow$ 0.1885), 5.99 points on TKY (0.1646 $\rightarrow$ 0.2245), and 5.16 points on Austin (0.0911 $\rightarrow$ 0.1427). This suggests that removing sparse users and rare POIs makes the recommendation task more learnable under a fixed model budget.
+
+\subsection{Results: LSTM Baseline}
+
+We ran the same filtration grid for the LSTM baseline on Foursquare NYC and TKY. Table~\ref{tab:lstm_acc1} reports Acc@1, and Table~\ref{tab:lstm_best} summarizes the best results per city.
+
+\begin{table}[!t]
+\centering
+\caption{LSTM Acc@1 under different filtration settings (Foursquare).}
+\label{tab:lstm_acc1}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Dataset} & \textbf{no\_filter} & \textbf{min\_10\_10} & \textbf{min\_20\_20} & \textbf{kcore\_10\_10} & \textbf{kcore\_20\_20} & \textbf{combined\_10\_10} \\
+\midrule
+Foursquare NYC & 0.1161 & 0.1356 & \textbf{0.1507} & 0.1356 & 0.1444 & 0.1356 \\
+Foursquare TKY & 0.1575 & 0.1787 & \textbf{0.1973} & 0.1787 & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{Best LSTM results on Foursquare.}
+\label{tab:lstm_best}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Dataset} & \textbf{Best filter} & \textbf{Acc@1} & \textbf{Acc@5} & \textbf{Acc@10} & \textbf{MRR} \\
+\midrule
+Foursquare NYC & min\_20\_20 & 0.1507 & 0.4744 & 0.6665 & 0.3024 \\
+Foursquare TKY & min\_20\_20 & 0.1973 & 0.5318 & 0.6636 & 0.3466 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On NYC, LSTM reaches Acc@1 = 0.1507 with \texttt{min\_20\_20}, compared with 0.1885 for GuGen-Lite under the same filter. On TKY, LSTM reaches Acc@1 = 0.1973, compared with 0.2245 for the best GuGen-Lite configuration. The same filtration trend holds for both models: stronger filtering improves Acc@1, and GuGen-Lite consistently outperforms LSTM, but by a moderate margin rather than a large one. This indicates that, under our unified protocol, the Transformer layer provides additional ranking benefit beyond a plain LSTM, while preprocessing remains a major driver of performance for both architectures.
+
+\paragraph{Preliminary observations.}
+Three patterns emerge from the current results:
+\begin{itemize}
+    \item \textbf{Filtering matters.} Both models improve substantially when sparse users and POIs are removed.
+    \item \textbf{Best filter depends on the dataset.} NYC favors minimum-visit filtering, while TKY favors stronger $k$-core filtering for GuGen-Lite.
+    \item \textbf{Train-test gap.} As in our pilot runs, training accuracy is much higher than test accuracy, especially with overlapping sliding windows. This is expected and motivates reporting only validation-selected test metrics.
+\end{itemize}
+
+LSTM experiments on Gowalla Austin and the remaining TKY filter settings (\texttt{kcore\_20\_20}, \texttt{combined\_10\_10}) are still in progress. GETNext experiments under the same unified pipeline are planned as the next step.
+
+
+\section{Conclusion}
+
+---
+
+\bibliography{references}
+
+% В конце основного документа, после \bibliography{references}
+
+% Переключаемся в одноколоночный режим для приложений
+\onecolumn
+
+\appendix
+\section{EDA: Full-size Figures}
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Check-ins per user]{\includegraphics[width=0.8\textwidth]{images/nyc_1_chekins_per_user.png}\label{fig:nyc_user}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Check-ins per user]{\includegraphics[width=0.8\textwidth]{images/tky_1_chekins_per_user.png}\label{fig:tky_user}}
+    \caption{Distribution of user activity levels. Left: Top-10 users by check-in count. Right: Log-scale histogram showing power-law behavior.}
+    \label{fig:user_distribution}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Top categories]{\includegraphics[width=0.8\textwidth]{images/nyc_2_top_categories.png}\label{fig:nyc_cats}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Top categories]{\includegraphics[width=0.8\textwidth]{images/tky_2_top_categories.png}\label{fig:tky_cats}}
+    \caption{Top-10 venue categories. Left: By unique users (reach). Right: By total check-ins (frequency).}
+    \label{fig:category_comparison}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Temporal patterns]{\includegraphics[width=0.8\textwidth]{images/nyc_3_chekins_by_hour.png}\label{fig:nyc_temp}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Temporal patterns]{\includegraphics[width=0.8\textwidth]{images/tky_3_chekins_by_hour.png}\label{fig:tky_temp}}
+    \caption{Temporal patterns: Hourly, daily, and monthly distributions.}
+    \label{fig:temporal_comparison}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Category-hour heatmap]{\includegraphics[width=0.8\textwidth]{images/nyc_4_chekins_per_catxhour.png}\label{fig:nyc_heatmap}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Category-hour heatmap]{\includegraphics[width=0.8\textwidth]{images/tky_4_chekins_per_catxhour.png}\label{fig:tky_heatmap}}
+    \caption{Category activity by hour (row-normalized). Darker color = peak hour for that category.}
+    \label{fig:heatmap_comparison}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: HDBSCAN clusters]{\includegraphics[width=0.8\textwidth]{images/nyc_5_hdbscan.png}\label{fig:nyc_clusters}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: HDBSCAN clusters]{\includegraphics[width=0.8\textwidth]{images/tky_5_hdbscan.png}\label{fig:tky_clusters}}
+    \caption{Geographic clustering of check-ins. Each color represents a distinct cluster; gray points are noise.}
+    \label{fig:cluster_comparison}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Venues vs Categories]{\includegraphics[width=0.8\textwidth]{images/nyc_6_category_diversity.png}\label{fig:nyc_diversity}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Venues vs Categories]{\includegraphics[width=0.8\textwidth]{images/tky_6_category_diversity.png}\label{fig:tky_diversity}}
+    \caption{User diversity: Unique venues visited vs unique categories explored. Point size = total check-ins.}
+    \label{fig:diversity_comparison}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Category entropy]{\includegraphics[width=0.8\textwidth]{images/nyc_7_category_entropy.png}\label{fig:nyc_entropy}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Category entropy]{\includegraphics[width=0.8\textwidth]{images/tky_7_category_entropy.png}\label{fig:tky_entropy}}
+    \caption{User category diversity measured by Shannon entropy (bits). Higher entropy = more diverse exploration.}
+    \label{fig:entropy_comparison}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Daily check-ins]{\includegraphics[width=0.8\textwidth]{images/nyc_8_chekins_rolling_window.png}\label{fig:nyc_trend}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Daily check-ins]{\includegraphics[width=0.8\textwidth]{images/tky_8_chekins_rolling_window.png}\label{fig:tky_trend}}
+    \caption{Daily check-ins with 7-day rolling average (red).}
+    \label{fig:trend_comparison}
+\end{figure}
+
+\clearpage
+
+\begin{figure}[!htp]
+    \centering
+    \subfloat[NYC: Weekday vs Weekend]{\includegraphics[width=0.8\textwidth]{images/nyc_9_week_weekend.png}\label{fig:nyc_weekend}}
+    \vspace{0.5cm}
+    
+    \subfloat[Tokyo: Weekday vs Weekend]{\includegraphics[width=0.8\textwidth]{images/tky_9_week_weekend.png}\label{fig:tky_weekend}}
+    \caption{Weekday vs weekend hourly patterns.}
+    \label{fig:weekend_comparison}
+\end{figure}
+
+\end{document}
+
+% trigger a \newpage just before the given reference
+% number - used to balance the columns on the last page
+% adjust value as needed - may need to be readjusted if
+% the document is modified later
+%\IEEEtriggeratref{8}
+% The "triggered" command can be changed if desired:
+%\IEEEtriggercmd{\enlargethispage{-5in}}

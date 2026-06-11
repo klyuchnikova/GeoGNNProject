@@ -18,6 +18,7 @@ from data.filters import FilterConfig
 from evaluate import Evaluator, print_metrics
 from models.gugen import GuGen, GuGenConfig
 from models.gugen_graph import GuGenGraph, GuGenGraphConfig
+from models.gugen_pos_graph import GuGenPosGraph, GuGenPosGraphConfig  # NEW
 from models.lstm import LstmConfig, LstmNextPOI
 from utils import (
     TrainConfig,
@@ -138,6 +139,24 @@ def build_model(cfg: TrainConfig, vocab: dict, graphs=None):
         )
         return GuGenGraph(model_cfg, graphs)
 
+    if cfg.model == "gugen_pos_graph":  # NEW
+        if graphs is None:
+            raise ValueError("gugen_pos_graph requires POI graphs built from the training split")
+        model_cfg = GuGenPosGraphConfig(
+            num_pois=vocab["num_pois"],
+            num_users=vocab["num_users"],
+            num_categories=vocab["num_categories"],
+            hidden_dim=cfg.hidden_dim,
+            num_heads=cfg.num_heads,
+            num_layers=cfg.num_layers,
+            gcn_layers=cfg.gcn_layers,
+            dropout=cfg.dropout,
+            use_time_embedding=cfg.use_time_embedding,
+            use_positional_encoding=cfg.use_positional_encoding,
+            max_seq_len=cfg.seq_len + 5,  # немного больше чем seq_len
+        )
+        return GuGenPosGraph(model_cfg, graphs)
+
     raise ValueError(f"Unsupported model: {cfg.model}")
 
 
@@ -164,7 +183,7 @@ def train(cfg: TrainConfig) -> dict:
     )
 
     graphs = None
-    if cfg.model == "gugen_graph":
+    if cfg.model in ["gugen_graph", "gugen_pos_graph"]:
         graphs = build_poi_graphs(
             train_df,
             num_pois=vocab["num_pois"],
@@ -277,7 +296,7 @@ def train(cfg: TrainConfig) -> dict:
 
 def parse_args() -> TrainConfig:
     parser = argparse.ArgumentParser(description="Train POI recommendation models")
-    parser.add_argument("--model", default="gugen", choices=["gugen", "gugen_graph", "lstm"])
+    parser.add_argument("--model", default="gugen", choices=["gugen", "gugen_graph", "gugen_pos_graph", "lstm"])
     parser.add_argument("--dataset", default="foursquare", choices=["foursquare", "gowalla"])
     parser.add_argument("--city", default="NYC")
     parser.add_argument("--data-root", default="../input")
@@ -290,7 +309,7 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--num-heads", type=int, default=4)
-    parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--gcn-layers", type=int, default=2)
     parser.add_argument("--geo-dist-km", type=float, default=0.5)
     parser.add_argument("--max-geo-neighbors", type=int, default=10)
@@ -307,6 +326,9 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--lr-scheduler-factor", type=float, default=0.1)
     parser.add_argument("--lr-scheduler-patience", type=int, default=5)
     parser.add_argument("--exp-name", default=None)
+    # NEW: Parameters for pos_graph
+    parser.add_argument("--use-time-embedding", action="store_true", help="Use time embeddings (hour, day of week)")
+    parser.add_argument("--use-positional-encoding", action="store_true", help="Use positional encoding in Transformer")
     args = parser.parse_args()
 
     device = str(resolve_device(args.device))
@@ -341,6 +363,8 @@ def parse_args() -> TrainConfig:
         lr_scheduler_patience=args.lr_scheduler_patience,
         exp_name=args.exp_name,
         weight_decay=args.weight_decay,
+        use_time_embedding=args.use_time_embedding,
+        use_positional_encoding=args.use_positional_encoding,
     )
 
 

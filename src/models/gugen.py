@@ -20,7 +20,7 @@ class HistoryEncoder(nn.Module):
         self.user_emb = nn.Embedding(num_users, hidden_dim)
         self.cat_emb = nn.Embedding(num_categories, hidden_dim)
         self.gru = nn.GRU(hidden_dim * 3, hidden_dim, batch_first=True)
-    
+
     def forward(self, poi, user, category):
         p = self.poi_emb(poi)
         u = self.user_emb(user).unsqueeze(1).expand(-1, p.size(1), -1)

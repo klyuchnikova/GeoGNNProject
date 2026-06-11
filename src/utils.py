@@ -31,7 +31,7 @@ class TrainConfig:
     hidden_dim: int = 128
     num_layers: int = 2
     num_heads: int = 4
-    dropout: float = 0.0
+    dropout: float = 0.1  # Changed default from 0.0 to 0.1
     gcn_layers: int = 2
     geo_dist_km: float = 0.5
     max_geo_neighbors: int = 10
@@ -48,9 +48,12 @@ class TrainConfig:
     checkpoint_dir: str = "checkpoints"
     results_dir: str = "results"
     log_dir: str = "logs"
-    lr_scheduler_factor: float = 0.01
+    lr_scheduler_factor: float = 0.1  # Changed from 0.01 to 0.1
     lr_scheduler_patience: int = 5
     exp_name: Optional[str] = None
+    # NEW: Parameters for gugen_pos_graph
+    use_time_embedding: bool = False
+    use_positional_encoding: bool = False
 
 
 def default_device() -> str:
@@ -106,6 +109,8 @@ def to_json_safe(obj):
         return obj.tolist()
     if isinstance(obj, Path):
         return str(obj)
+    if isinstance(obj, torch.Tensor):
+        return obj.tolist()
     return obj
 
 
@@ -159,7 +164,18 @@ def remap_ids(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 def move_batch_to_device(batch: dict, device: torch.device) -> dict:
-    return {key: value.to(device) if torch.is_tensor(value) else value for key, value in batch.items()}
+    """Move all tensors in batch to device."""
+    result = {}
+    for key, value in batch.items():
+        if torch.is_tensor(value):
+            result[key] = value.to(device)
+        elif isinstance(value, dict):
+            result[key] = move_batch_to_device(value, device)
+        elif isinstance(value, list):
+            result[key] = [v.to(device) if torch.is_tensor(v) else v for v in value]
+        else:
+            result[key] = value
+    return result
 
 
 def train_epoch(model, dataloader, optimizer, device, epoch: int, logger: logging.Logger) -> float:
@@ -173,6 +189,10 @@ def train_epoch(model, dataloader, optimizer, device, epoch: int, logger: loggin
         optimizer.zero_grad()
         loss = model.loss(batch)
         loss.backward()
+        
+        # Optional: gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
         optimizer.step()
 
         loss_value = loss.item()
@@ -244,7 +264,24 @@ def save_results(
 
 
 def run_name(cfg: TrainConfig) -> str:
-    return f"{cfg.model}_{cfg.dataset}_{cfg.city}" + ("_" + cfg.exp_name if cfg.exp_name else '')
+    """Generate a unique name for this experiment run."""
+    name = f"{cfg.model}_{cfg.dataset}_{cfg.city}"
+    
+    # Add graph indicator if applicable
+    if cfg.model == "gugen_graph":
+        name += f"_graph"
+    elif cfg.model == "gugen_pos_graph":
+        name += f"_pos_graph"
+        if cfg.use_time_embedding:
+            name += "_time"
+        if cfg.use_positional_encoding:
+            name += "_posenc"
+    
+    # Add experiment name if provided
+    if cfg.exp_name:
+        name += f"_{cfg.exp_name}"
+    
+    return name
 
 
 def output_paths(cfg: TrainConfig) -> tuple[Path, Path, Path]:

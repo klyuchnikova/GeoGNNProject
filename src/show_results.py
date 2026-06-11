@@ -12,8 +12,8 @@ parser.add_argument(
 args = parser.parse_args()
 model_prefix = args.model
 
-print("Experiment | ACC@1 | ACC@5 | ACC@10 | MRR")
-print("---------|-------|-------|--------|-----")
+print("Experiment | ACC@1 | ACC@5 | ACC@10 | MAP@5 | MAP@10 | MRR")
+print("---------|-------|-------|--------|-------|--------|-----")
 
 for exp_dir in sorted(Path("../results").glob(f"{model_prefix}_*")):
     if not exp_dir.is_dir():
@@ -39,9 +39,11 @@ for exp_dir in sorted(Path("../results").glob(f"{model_prefix}_*")):
     acc1 = test_metrics.get('acc1', 0)
     acc5 = test_metrics.get('acc5', 0)
     acc10 = test_metrics.get('acc10', 0)
+    map5 = test_metrics.get('map5', 0)  # Fixed this line
+    map10 = test_metrics.get('map10', 0)  # Fixed this line
     mrr = test_metrics.get('mrr', 0)
     
-    print(f"{exp_name} | {acc1:.4f} | {acc5:.4f} | {acc10:.4f} | {mrr:.4f}")
+    print(f"{exp_name} | {acc1:.4f} | {acc5:.4f} | {acc10:.4f} | {map5:.4f} | {map10:.4f} | {mrr:.4f}")
 
 # Parse all results
 results = {}
