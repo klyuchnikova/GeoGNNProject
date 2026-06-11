@@ -23,21 +23,6 @@ requirements.txt            Python dependencies
 pyproject.toml              Package metadata
 ```
 
-Removed on purpose:
-
-```text
-THIRD_PARTY_NOTICES.md
-run_*.sh
-tests/
-notebooks/
-data/input/
-data/synthetic/
-runs/
-checkpoints/
-__pycache__/
-.pytest_cache/
-```
-
 ## Gowalla Austin dataset
 
 The main data file is expected as a separate archive:
@@ -237,12 +222,6 @@ The most useful final table is usually:
 ```text
 runs/summary/all_experiments_rebuilt.csv
 ```
-
-## Notes for the report
-
-Recommended wording:
-
-> The strongest Austin result was achieved by the graph-memory enhanced Graph-Flashback variant on the min20/20 filtered Austin subset. Compared with the enhanced Graph-Flashback on the same filtered protocol, the graph-memory variant improves Acc@1 and MRR by adding dynamic user-history and direct transition-graph priors. Since filtering changes the candidate space and test distribution, filtered-protocol results are reported separately from the common Austin split.
 
 ## References
 
