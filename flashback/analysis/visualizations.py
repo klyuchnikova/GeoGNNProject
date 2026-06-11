@@ -1,7 +1,12 @@
 from __future__ import annotations
 import argparse,json
+import os
+import tempfile
 from pathlib import Path
 import pandas as pd
+os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "geognn_mpl_cache"))
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from flashback.utils import read_table
 

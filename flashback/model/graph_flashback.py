@@ -125,6 +125,34 @@ def _build_context_statistics(
     )
 
 
+def _row_max_normalize(matrix: sp.spmatrix) -> sp.csr_matrix:
+    matrix = matrix.astype("float32").tocsr(copy=True)
+    if matrix.nnz == 0:
+        return matrix
+    for row in range(matrix.shape[0]):
+        start, end = matrix.indptr[row], matrix.indptr[row + 1]
+        if start == end:
+            continue
+        maximum = float(matrix.data[start:end].max())
+        if maximum > 0:
+            matrix.data[start:end] /= maximum
+    return matrix
+
+
+def _empirical_graphs(frame: pd.DataFrame, n_users: int, n_pois: int) -> tuple[sp.csr_matrix, sp.csr_matrix]:
+    train = frame[frame["split"] == "train"].sort_values(["user_id", "timestamp"])
+    transition = sp.lil_matrix((n_pois, n_pois), dtype=np.float32)
+    preference = sp.lil_matrix((n_users, n_pois), dtype=np.float32)
+    for user_id, group in train.groupby("user_id", sort=False):
+        pois = group["poi_id"].to_numpy(np.int64)
+        for poi_id in pois:
+            preference[int(user_id), int(poi_id)] += 1.0
+        for left, right in zip(pois[:-1], pois[1:]):
+            if left != right:
+                transition[int(left), int(right)] += 1.0
+    return _row_max_normalize(transition), _row_max_normalize(preference)
+
+
 class GraphFlashback(nn.Module):
     """Graph-Flashback with optional ranking-oriented enhancements.
 
@@ -188,6 +216,10 @@ class GraphFlashback(nn.Module):
             scipy_to_torch_sparse(_normalized_with_self(transition, 1.0, cfg.model.lambda_loc)),
         )
         self.register_buffer("preference", scipy_to_torch_sparse(random_walk_normalize(preference)))
+        if cfg.model.transition_graph_prior_weight > 0:
+            self.register_buffer("transition_prior", torch.from_numpy(_row_max_normalize(transition).toarray()))
+        else:
+            self.register_buffer("transition_prior", torch.empty(0))
 
         self.spatial_enabled = spatial is not None and cfg.model.use_spatial_graph
         self.friend_enabled = friends is not None and cfg.model.use_friend_graph
@@ -243,6 +275,8 @@ class GraphFlashback(nn.Module):
         self._register_prior_weight("global", cfg.model.global_prior_weight)
         self._register_prior_weight("geo", cfg.model.geo_prior_weight)
         self._register_prior_weight("category", cfg.model.category_transition_weight)
+        self._register_prior_weight("dynamic_graph", cfg.model.dynamic_graph_prior_weight)
+        self._register_prior_weight("transition_graph", cfg.model.transition_graph_prior_weight)
         self.reset_parameters()
 
     def _register_prior_weight(self, name: str, value: float) -> None:
@@ -357,6 +391,32 @@ class GraphFlashback(nn.Module):
         ).scatter_add(2, index, value)
         return dense / (dense.amax(dim=-1, keepdim=True) + 1e-12)
 
+    def _dense_dynamic_graph_prior(
+        self,
+        index: torch.Tensor,
+        value: torch.Tensor,
+        output_steps: int,
+    ) -> torch.Tensor:
+        if self.cfg.data.sequence_mode == "window_last" and index.shape[1] != output_steps:
+            index = index[:, -1:, :]
+            value = value[:, -1:, :]
+        dense = torch.zeros(
+            (index.shape[0], output_steps, self.n_pois),
+            device=index.device,
+            dtype=value.dtype,
+        )
+        return dense.scatter_add(2, index[:, :output_steps, :], value[:, :output_steps, :])
+
+    def _direct_transition_graph_prior(self, locations: torch.Tensor, output_steps: int) -> torch.Tensor:
+        if self.transition_prior.numel() == 0:
+            return torch.zeros(
+                (locations.shape[0], output_steps, self.n_pois),
+                device=locations.device,
+                dtype=self.poi_embedding.weight.dtype,
+            )
+        source = locations[:, -1:] if self.cfg.data.sequence_mode == "window_last" else locations
+        return self.transition_prior[source[:, :output_steps]]
+
     def _candidate_geo_prior(self, coordinates: torch.Tensor, output_steps: int) -> torch.Tensor:
         if self.cfg.data.sequence_mode == "window_last":
             origin = coordinates[:, -1, :]
@@ -403,6 +463,8 @@ class GraphFlashback(nn.Module):
         user_id: torch.Tensor,
         valid_input: torch.Tensor | None = None,
         category_ids: torch.Tensor | None = None,
+        history_prior_index: torch.Tensor | None = None,
+        history_prior_value: torch.Tensor | None = None,
         hidden=None,
     ):
         poi_embeddings, user_embeddings = self.graph_embeddings()
@@ -477,6 +539,21 @@ class GraphFlashback(nn.Module):
             category_prior = self._candidate_category_prior(category_ids, output_steps)
             if category_prior is not None:
                 logits = logits + self.prior_weight("category") * category_prior
+        if (
+            history_prior_index is not None
+            and history_prior_value is not None
+            and float(self.prior_weight("dynamic_graph").detach()) > 0
+        ):
+            logits = logits + self.prior_weight("dynamic_graph") * self._dense_dynamic_graph_prior(
+                history_prior_index,
+                history_prior_value.to(dtype=logits.dtype),
+                output_steps,
+            )
+        if float(self.prior_weight("transition_graph").detach()) > 0:
+            logits = logits + self.prior_weight("transition_graph") * self._direct_transition_graph_prior(
+                locations,
+                output_steps,
+            ).to(dtype=logits.dtype)
 
         auxiliary = {
             "flashback_weights": weights,
@@ -498,6 +575,13 @@ def load_model(
     statistics = _build_context_statistics(
         frame, n_users, n_pois, n_categories, cfg.model.personal_prior_topk
     )
+    transition_path = graph_dir / "poi_transition.npz"
+    preference_path = graph_dir / "user_poi_preference.npz"
+    if transition_path.exists() and preference_path.exists():
+        transition = load_sparse(transition_path)
+        preference = load_sparse(preference_path)
+    else:
+        transition, preference = _empirical_graphs(frame, n_users, n_pois)
     spatial_path = graph_dir / "poi_spatial.npz"
     friend_path = graph_dir / "user_friend.npz"
     return GraphFlashback(
@@ -505,8 +589,8 @@ def load_model(
         n_pois,
         n_categories,
         cfg,
-        load_sparse(graph_dir / "poi_transition.npz"),
-        load_sparse(graph_dir / "user_poi_preference.npz"),
+        transition,
+        preference,
         *statistics,
         load_sparse(spatial_path) if spatial_path.exists() else None,
         load_sparse(friend_path) if friend_path.exists() else None,

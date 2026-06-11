@@ -1,199 +1,252 @@
-# GeoGNNProject — clean Austin Graph-Flashback experiment suite
+# GeoGNNProject — Graph-Flashback experiments
 
-This branch contains an Austin-only Graph-Flashback implementation plus a tidy experiment runner modelled after the `gugen` branch style: a small set of named profiles, explicit filtration settings, reusable shared assets and resumable training.
+This branch contains a clean, report-ready implementation of next-POI recommendation experiments based on Graph-Flashback ideas. The code focuses on two datasets:
 
-The original project materials stay in the repository root and are preserved by the cleanup script:
+1. **Gowalla Austin** — the main evaluated dataset for the project.
+2. **Foursquare NYC** — an additional optional run that can be launched from Kaggle to complete a second-dataset results table.
 
-- `GeoGNNProject.pdf`
-- `gowalla_validated_metadata_eda.ipynb`
-- `foursquaregraphs-eda.ipynb`
+The repository intentionally contains only source code, configs and experiment runners. It does **not** include generated checkpoints, prepared graphs, Kaggle outputs, old failed runs, smoke tests, offline wrappers or dataset files.
 
-## What changed in v8
+## Repository structure
 
-The old unsuccessful one-off runs are not part of the suite. The kept and added experiments are:
-
-- three-seed tuned model for `mean ± std`;
-- KGE graph ablations: no graph, transition-only, preference-only, full graph;
-- rank-based STKG check;
-- tuned friendship ablation;
-- RNN/GRU/LSTM recurrent-cell comparison;
-- GUGEN-style filtration sweep: min-only, iterative k-core, combined min+k-core;
-- original-like Austin Graph-Flashback reference;
-- graph-neighbor diagnostics showing whether the true next POI is present in KGE graph neighbors.
-
-## Dataset
-
-Attach `gowalla_austin_enriched_195k.zip` as a Kaggle Dataset. It contains only Austin Gowalla data:
-
-- `gowalla_austin_checkins.csv(.gz)`
-- `gowalla_austin_friendships.csv(.gz)`
-- `manifest.json`
-- `README.md`
-
-Required check-in columns:
-
-`raw_user_id, timestamp, latitude, longitude, raw_poi_id, category`
-
-Foursquare is not mixed into this dataset.
-
-## Experiment profiles
-
-Profiles are defined in `experiments/austin_suite.yaml`.
-
-| Profile | Purpose |
-|---|---|
-| `core` | Compact report-ready run: full model, graph ablations, friendship, original-like. |
-| `full` | Main run: core + 3 seeds + cell sweep + selected filter sweep. |
-| `filter_sweep` | Filtration sensitivity experiments in the GUGEN style. |
-| `cells` | RNN vs GRU vs LSTM on the common Austin split. |
-| `graph_ablation` | KGE graph and friendship ablations on the common split. |
-| `original_like` | Rank-STKG Graph-Flashback with RNN/GRU/LSTM cells and paper-like settings. |
-
-The `full` profile currently runs 15 experiments:
-
-1. `tuned_full_seed42`
-2. `tuned_full_seed7`
-3. `tuned_full_seed2026`
-4. `tuned_no_kge_graphs`
-5. `tuned_transition_only`
-6. `tuned_preference_only`
-7. `tuned_no_priors`
-8. `tuned_rank_scheme`
-9. `tuned_with_friendship`
-10. `tuned_lstm`
-11. `tuned_rnn`
-12. `filter_min20_20`
-13. `filter_kcore20_20`
-14. `filter_combined10_10`
-15. `faithful_rank`
-
-The `filter_sweep` profile additionally includes `filter_no_filter_2_2`, `filter_min10_10`, `filter_kcore10_10` and `filter_kcore30_20`.
-
-## Install this overlay into `flashback-branch`
-
-From the repository root in PowerShell:
-
-```powershell
-git checkout flashback-branch
-Expand-Archive -LiteralPath "C:\path\GeoGNNProject_flashback_austin_clean_v8.zip" -DestinationPath "." -Force
-python .\scripts\apply_clean_update.py
-python .\scripts\verify_merge.py
-git add -A
-git commit -m "Clean Austin Graph-Flashback experiments"
-git push origin flashback-branch
+```text
+flashback/                  Core implementation
+  data/                     Input adapters, preprocessing, sequence datasets
+  kge/                      STKG construction, TransE training, graph construction
+  model/                    Graph-Flashback and graph-memory model
+  evaluation/               Acc@k, MAP@k, MRR, macro-user metrics
+  analysis/                 Result visualizations
+configs/                    Report-ready experiment configs
+experiments/                Named experiment suites
+scripts/                    Kaggle/local launch and packaging scripts
+requirements.txt            Python dependencies
+pyproject.toml              Package metadata
 ```
 
-The Austin dataset is not committed to Git.
+Removed on purpose:
 
-## Kaggle offline run
-
-### One online step
-
-Clone the branch while Internet is enabled:
-
-```python
-%cd /kaggle/working
-!rm -rf GeoGNNProject
-!git clone --depth 1 --branch flashback-branch --single-branch https://github.com/klyuchnikova/GeoGNNProject.git
-%cd /kaggle/working/GeoGNNProject
+```text
+THIRD_PARTY_NOTICES.md
+run_*.sh
+tests/
+notebooks/
+data/input/
+data/synthetic/
+runs/
+checkpoints/
+__pycache__/
+.pytest_cache/
 ```
 
-Attach `gowalla_austin_enriched_195k.zip` as an Input Dataset. After cloning and attaching the dataset, Internet can be disabled. Kaggle GPU continues to work because the accelerator setting is independent of Internet access.
+## Gowalla Austin dataset
 
-### Offline cells
+The main data file is expected as a separate archive:
+
+```text
+gowalla_austin_enriched_195k.zip
+```
+
+It contains an Austin-only enriched subset of Gowalla with categories:
+
+| Field | Value |
+|---|---:|
+| Check-ins before downstream filtering | 195,727 |
+| Users | 769 |
+| POIs | 10,077 |
+| Optional friendship edges | 6,938 |
+| Category coverage | about 98.4% |
+| Time range | 2009-03-13 to 2010-10-22 |
+
+The subset is built from Gowalla check-ins, Gowalla POI metadata and optional Gowalla friendship edges. Austin is selected by a coordinate bounding box, and the model applies stricter filters inside each experiment.
+
+Expected columns:
+
+```text
+raw_user_id,timestamp,latitude,longitude,raw_poi_id,category
+```
+
+The dataset archive is not committed to GitHub. Attach it as Kaggle input or keep it locally.
+
+## Implemented methods
+
+### 1. Plain Flashback baseline
+
+Experiment:
+
+```text
+plain_flashback_min20_20
+```
+
+This is the ordinary sequential baseline on the Austin min20/20 split. It disables KGE-derived transition/user-POI graphs and disables the additional ranking priors. It is included so that the graph-enhanced variants are not compared only against popularity baselines.
+
+### 2. Original-like Graph-Flashback
+
+Experiment:
+
+```text
+original_like_graph_flashback
+```
+
+This configuration follows the paper-style pipeline more closely:
+
+```text
+STKG → TransE → POI transition graph + user-POI preference graph → RNN + Flashback
+```
+
+It uses rank-based spatial relations, friendship triplets, small hidden dimension, no category/time priors, no BPR loss and a paper-like split. It is kept as a reproduction-oriented reference, not as the strongest tuned model.
+
+### 3. Enhanced Graph-Flashback, common Austin split
+
+Experiment:
+
+```text
+enhanced_graph_flashback_common
+```
+
+This is the project’s common Austin protocol. It uses:
+
+- rolling windows of length 20;
+- GRU hidden size 128;
+- category embedding;
+- hour-of-week and time-gap embeddings;
+- two graph propagation layers;
+- train-only personal, recent, global, geographical and category-transition priors;
+- repeat/explore gate;
+- cross-entropy plus BPR ranking loss;
+- hard negatives;
+- validation checkpointing by MRR.
+
+### 4. Enhanced Graph-Flashback, Austin min20/20
+
+Experiment:
+
+```text
+enhanced_graph_flashback_min20_20
+```
+
+This is the strongest result from the clean Austin sweep already run in Kaggle. It uses the same enhanced model as above, but on the stronger min20/20 filtered Austin protocol.
+
+### 5. Graph-memory Enhanced Graph-Flashback, Austin min20/20
+
+Experiment:
+
+```text
+graph_memory_graph_flashback_min20_20
+```
+
+This is the strongest integrated variant. It adds graph-memory priors to the enhanced model:
+
+- dynamic user-history prior built only from locations visited before the target;
+- direct transition-graph prior from the last observed POI to graph-neighbor candidate POIs;
+- learnable prior weights;
+- repeat gate;
+- min20/20 Austin filtering.
+
+The goal is to make the graph signal affect the final ranking directly, not only through graph-smoothed embeddings. This is useful because the Austin diagnostics show that the true next POI is sometimes present in KGE graph neighborhoods, but the indirect GCN signal alone is weak.
+
+## Gowalla Austin experiments to run
+
+Install the dataset and run the compact report suite:
 
 ```python
 %cd /kaggle/working/GeoGNNProject
-!python scripts/check_offline_environment.py
+
 !python scripts/install_austin_dataset.py
-!python scripts/verify_merge.py
-```
-
-Optional smoke test:
-
-```python
-!python scripts/make_synthetic_data.py
-!python -m flashback.pipeline --config configs/smoke.yaml --stage all
-!python -m pytest -q --basetemp=/kaggle/working/pytest_tmp
-```
-
-Main full run:
-
-```python
-!python scripts/run_austin_experiments.py --profile full
-```
-
-Smaller runs:
-
-```python
-!python scripts/run_austin_experiments.py --profile core
-!python scripts/run_austin_experiments.py --profile filter_sweep
-!python scripts/run_austin_experiments.py --profile cells
-!python scripts/run_austin_experiments.py --profile graph_ablation
-!python scripts/run_austin_experiments.py --profile original_like
-```
-
-The runner is resumable. If the session stops, repeat the same command; completed shared assets and completed experiment metrics are skipped.
-
-## Package and download results
-
-```python
+!python scripts/run_gowalla_austin_experiments.py --profile report
+!python scripts/rebuild_summary.py
 !python scripts/package_results.py
 ```
 
-The archive is written to:
-
-`/kaggle/working/graph_flashback_austin_experiments.zip`
-
-A browser download from a Kaggle notebook does not require outbound Internet access from the Python kernel. Click the file in the Output panel or display a link:
+Faster run with only the two strongest Austin models:
 
 ```python
-from IPython.display import FileLink, display
-display(FileLink('/kaggle/working/graph_flashback_austin_experiments.zip'))
+!python scripts/run_gowalla_austin_experiments.py --profile best
 ```
 
-## Local VS Code / PowerShell
+The result ZIP is written to:
 
-You need only:
+```text
+/kaggle/working/graph_flashback_report_results.zip
+```
 
-1. this repository/code overlay;
-2. `gowalla_austin_enriched_195k.zip`;
-3. a Python environment with packages from `requirements.txt` installed.
+## Foursquare NYC experiments
+
+The Foursquare NYC run is optional and intended to complete the report table with a second dataset.
+
+The script first looks for an attached Kaggle input containing the standard TSMC2014 NYC file. If it is not attached, it downloads the public Kaggle dataset `chetanism/foursquare-nyc-and-tokyo-checkin-dataset` while Kaggle Internet is enabled.
 
 Run:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_local_offline.ps1 `
-  -Profile full `
-  -Dataset "C:\path\gowalla_austin_enriched_195k.zip"
+```python
+%cd /kaggle/working/GeoGNNProject
+
+!python scripts/run_foursquare_nyc_experiments.py --profile report
+!python scripts/rebuild_summary.py
+!python scripts/package_results.py
 ```
 
-For a fully offline new Windows machine, download platform-specific wheels once while online:
+Faster Foursquare run with only the enhanced and graph-memory models:
 
-```powershell
-python -m pip download -r requirements.txt -d wheelhouse
+```python
+!python scripts/run_foursquare_nyc_experiments.py --profile best
 ```
 
-Then install offline:
+Foursquare NYC experiments:
 
-```powershell
-python -m pip install --no-index --find-links wheelhouse -r requirements.txt
+```text
+foursquare_nyc_plain_flashback
+foursquare_nyc_enhanced_graph_flashback
+foursquare_nyc_graph_memory_graph_flashback
 ```
 
-Do not reuse a Linux/Kaggle wheelhouse on Windows.
+## Current Gowalla results
 
-## Outputs
+These are the results already obtained from the previous Kaggle runs and the additional graph-memory archive. The Foursquare rows are intentionally left for the new Kaggle run.
 
-- `runs/shared/`: prepared data, STKG, TransE and sparse graph assets;
-- `runs/shared/*/graphs/graph_neighbor_diagnostics.json`: KGE graph hit-rate diagnostics;
-- `runs/experiments/<name>/`: histories, metrics, predictions and figures;
-- `runs/summary/experiment_metrics.csv`: all experiment rows plus baselines and published references;
-- `runs/summary/common_protocol_results.csv`: fixed Austin split experiments plus baselines and references;
-- `runs/summary/per_filter_results.csv`: filter-sweep rows;
-- `runs/summary/graph_diagnostics_summary.csv`: true-next-POI hit-rate inside KGE graph neighbors;
-- `runs/summary/seed_summary.csv`: mean and standard deviation across the three full tuned seeds;
-- `runs/summary/mrr_comparison.png`: compact MRR plot.
+| Model | Dataset / protocol | Acc@1 | Acc@5 | Acc@10 | MAP@5 | MAP@10 | MRR |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Global popularity | Austin common split | 0.0136 | 0.0519 | 0.0846 | 0.0288 | 0.0333 | 0.0393 |
+| Personal popularity | Austin common split | 0.1021 | 0.2381 | 0.3044 | 0.1513 | 0.1600 | 0.1688 |
+| Original-like Graph-Flashback | Austin paper-like/rank | 0.0791 | 0.1641 | 0.2032 | 0.1105 | 0.1158 | 0.1232 |
+| Enhanced Graph-Flashback | Austin common split | 0.1149 | 0.2507 | 0.3214 | 0.1643 | 0.1737 | 0.1852 |
+| Enhanced Graph-Flashback | Austin min20/20 | 0.1329 | 0.2882 | 0.3631 | 0.1898 | 0.1998 | 0.2117 |
+| Graph-memory Enhanced Graph-Flashback | Austin min20/20 | **0.1422** | **0.2932** | **0.3740** | **0.1974** | **0.2081** | **0.2201** |
+| Flashback, paper reference | Full Gowalla | 0.1158 | 0.2754 | 0.3479 | — | — | 0.1925 |
+| Graph-Flashback, paper reference | Full Gowalla | 0.1512 | 0.3425 | 0.4256 | — | — | 0.2422 |
+| Plain Flashback | Foursquare NYC min20/20 | to run | to run | to run | to run | to run | to run |
+| Enhanced Graph-Flashback | Foursquare NYC min20/20 | to run | to run | to run | to run | to run | to run |
+| Graph-memory Enhanced Graph-Flashback | Foursquare NYC min20/20 | to run | to run | to run | to run | to run | to run |
 
-Metrics: `Acc@1/5/10`, `MAP@5/10`, `MRR`, plus macro-user variants inside detailed JSON files.
+Important: paper-reference rows are not directly comparable to Austin rows, because the paper uses the full processed Gowalla dataset and a different protocol. They are included only as an external reference point.
 
-Published full-Gowalla values are included only as references. They are not directly comparable to Austin-only experiments.
+## Summary files produced by the runners
+
+After a run, the following files are created under `runs/summary/`:
+
+```text
+experiment_metrics.csv
+common_protocol_results.csv
+filtered_protocol_results.csv
+foursquare_nyc_results.csv
+graph_diagnostics_summary.csv
+all_experiments_rebuilt.csv
+```
+
+The most useful final table is usually:
+
+```text
+runs/summary/all_experiments_rebuilt.csv
+```
+
+## Notes for the report
+
+Recommended wording:
+
+> The strongest Austin result was achieved by the graph-memory enhanced Graph-Flashback variant on the min20/20 filtered Austin subset. Compared with the enhanced Graph-Flashback on the same filtered protocol, the graph-memory variant improves Acc@1 and MRR by adding dynamic user-history and direct transition-graph priors. Since filtering changes the candidate space and test distribution, filtered-protocol results are reported separately from the common Austin split.
+
+## References
+
+- Graph-Flashback paper: Graph-Flashback Network for Next Location Recommendation, KDD 2022.
+- Official Graph-Flashback implementation: `kevin-xuan/Graph-Flashback`.
+- Gowalla source data: SNAP Gowalla location check-ins and friendship network.
+- Foursquare NYC/Tokyo public release: TSMC2014 Foursquare check-ins, available as a Kaggle dataset.

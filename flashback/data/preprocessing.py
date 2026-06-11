@@ -47,7 +47,7 @@ def _load_metadata(path: str | Path | None) -> pd.DataFrame | None:
 
 
 def _min_filter_once(frame: pd.DataFrame, min_checkins: int, min_poi_visits: int) -> pd.DataFrame:
-    """Sequential user-min then POI-min filtering, matching the GUGEN-style sweep."""
+    """Sequential user-min then POI-min filtering for filtration sweeps."""
     frame = frame.copy()
     if min_checkins > 1:
         user_counts = frame["raw_user_id"].value_counts()

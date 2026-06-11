@@ -1,0 +1,33 @@
+profiles:
+  report:
+    - foursquare_nyc_plain_flashback
+    - foursquare_nyc_enhanced_graph_flashback
+    - foursquare_nyc_graph_memory_graph_flashback
+  best:
+    - foursquare_nyc_enhanced_graph_flashback
+    - foursquare_nyc_graph_memory_graph_flashback
+
+groups:
+  foursquare_nyc_plain_min20_20:
+    base_config: configs/foursquare_nyc_plain_flashback_min20_20.yaml
+  foursquare_nyc_min20_20:
+    base_config: configs/foursquare_nyc_enhanced_min20_20.yaml
+  foursquare_nyc_graph_memory_min20_20:
+    base_config: configs/foursquare_nyc_graph_memory_min20_20.yaml
+
+experiments:
+  foursquare_nyc_plain_flashback:
+    group: foursquare_nyc_plain_min20_20
+    label: Plain Flashback, Foursquare NYC min20/20
+    family: foursquare_nyc
+    overrides: {}
+  foursquare_nyc_enhanced_graph_flashback:
+    group: foursquare_nyc_min20_20
+    label: Enhanced Graph-Flashback, Foursquare NYC min20/20
+    family: foursquare_nyc
+    overrides: {}
+  foursquare_nyc_graph_memory_graph_flashback:
+    group: foursquare_nyc_graph_memory_min20_20
+    label: Graph-memory Enhanced Graph-Flashback, Foursquare NYC min20/20
+    family: foursquare_nyc
+    overrides: {}

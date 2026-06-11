@@ -23,6 +23,7 @@ def _loader(path, split, cfg, shuffle=False):
         cfg.data.sequence_length,
         cfg.data.sequence_stride,
         cfg.data.sequence_mode,
+        cfg.model.dynamic_graph_prior_topk,
     )
     return DataLoader(
         dataset,
@@ -96,6 +97,8 @@ def train_graph_flashback(cfg, checkins_path):
                 batch["user_id"],
                 batch["valid_input"],
                 batch.get("category_ids"),
+                batch.get("history_prior_index"),
+                batch.get("history_prior_value"),
             )
             flat_logits = logits[mask]
             flat_targets = batch["targets"][mask]
@@ -215,6 +218,8 @@ def train_graph_flashback(cfg, checkins_path):
             "recent_prior_weight": cfg.model.recent_prior_weight,
             "geo_prior_weight": cfg.model.geo_prior_weight,
             "category_transition_weight": cfg.model.category_transition_weight,
+            "dynamic_graph_prior_weight": cfg.model.dynamic_graph_prior_weight,
+            "transition_graph_prior_weight": cfg.model.transition_graph_prior_weight,
         },
     }
     if validation_loader is not None:

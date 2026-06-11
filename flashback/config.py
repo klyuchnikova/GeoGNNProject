@@ -27,7 +27,7 @@ class DataConfig:
     ])
     # Iterative user/POI k-core thresholds. Paper-like mode uses 101/1;
     # tuned common-benchmark mode uses smaller user_k and poi_k=10.
-    # Filtering follows the same ideas as the GUGEN branch:
+    # Filtering supports several project-level regimes: sequential min-count, iterative k-core, and combined filtering.
     # - min_only: one sequential user-min then poi-min pass.
     # - iterative_kcore: repeated user/POI filtering until stable.
     # - combined: min_only first, then iterative k-core with user_k/poi_k.
@@ -122,7 +122,13 @@ class ModelConfig:
     global_prior_weight: float = 0.0
     geo_prior_weight: float = 0.0
     category_transition_weight: float = 0.0
+    # Dynamic graph-memory priors are disabled by default and enabled only in
+    # the graph-memory experiments. They are built from past user history and
+    # train-time transition graphs, so they do not leak future labels.
+    dynamic_graph_prior_weight: float = 0.0
+    transition_graph_prior_weight: float = 0.0
     personal_prior_topk: int = 200
+    dynamic_graph_prior_topk: int = 100
     recent_prior_tau: float = 5.0
     geo_prior_scale_km: float = 5.0
     learnable_prior_weights: bool = False
@@ -240,9 +246,12 @@ def validate_config(cfg: ExperimentConfig) -> None:
     for name in (
         "personal_prior_weight", "recent_prior_weight", "global_prior_weight",
         "geo_prior_weight", "category_transition_weight",
+        "dynamic_graph_prior_weight", "transition_graph_prior_weight",
     ):
         if getattr(cfg.model, name) < 0:
             raise ValueError(f"{name} must be >= 0")
+    if cfg.model.dynamic_graph_prior_topk < 1:
+        raise ValueError("dynamic_graph_prior_topk must be >= 1")
     if cfg.data.val_ratio == 0 and cfg.train.checkpoint_metric not in {"train_loss", "final_epoch"}:
         cfg.train.checkpoint_metric = "final_epoch"
         cfg.train.checkpoint_mode = "max"

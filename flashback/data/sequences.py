@@ -27,8 +27,11 @@ class NextPoiSequenceDataset(Dataset):
         sequence_length: int,
         stride: int,
         mode: str = "block_all",
+        history_topk: int = 100,
     ):
         self.samples: list[tuple[np.ndarray, ...]] = []
+        self.n_pois = int(checkins["poi_id"].max()) + 1
+        self.history_topk = max(1, min(int(history_topk), self.n_pois))
         stride = max(1, int(stride))
         for user_id, group in checkins.groupby("user_id", sort=False):
             group = group.sort_values("timestamp").reset_index(drop=True)
@@ -58,6 +61,25 @@ class NextPoiSequenceDataset(Dataset):
         if not self.samples:
             raise ValueError(f"No {split} targets. Check filtering, split ratios, and sequence settings.")
 
+    def _history_prior(self, counts: np.ndarray, output_steps: int = 1) -> tuple[np.ndarray, np.ndarray]:
+        topk = self.history_topk
+        indices = np.zeros((output_steps, topk), dtype=np.int64)
+        values = np.zeros((output_steps, topk), dtype=np.float32)
+        if counts.sum() <= 0:
+            return indices, values
+        score = np.log1p(counts.astype(np.float32))
+        positive = np.flatnonzero(score > 0)
+        if positive.size == 0:
+            return indices, values
+        keep = min(topk, positive.size)
+        selected = positive[np.argpartition(score[positive], -keep)[-keep:]]
+        selected = selected[np.argsort(score[selected])[::-1]]
+        selected_values = score[selected]
+        selected_values = selected_values / max(float(selected_values.max()), 1e-12)
+        indices[:, :keep] = selected[None, :]
+        values[:, :keep] = selected_values[None, :]
+        return indices, values
+
     def _append_window_samples(
         self, user_id, loc, cat, ts, coords, split_labels,
         split, sequence_length, stride,
@@ -69,7 +91,12 @@ class NextPoiSequenceDataset(Dataset):
             pos for pos in range(sequence_length, len(loc))
             if split_labels[pos] == split
         ]
+        counts = np.zeros(self.n_pois, dtype=np.float32)
+        next_candidate = 0
         for target_pos in candidate_positions[::stride]:
+            while next_candidate < target_pos:
+                counts[loc[next_candidate]] += 1.0
+                next_candidate += 1
             start = target_pos - sequence_length
             in_loc = loc[start:target_pos].copy()
             in_cat = cat[start:target_pos].copy()
@@ -78,8 +105,20 @@ class NextPoiSequenceDataset(Dataset):
             targets = np.asarray([loc[target_pos]], dtype=np.int64)
             target_mask = np.asarray([True], dtype=np.bool_)
             valid_input = np.ones(sequence_length, dtype=np.bool_)
+            history_index, history_value = self._history_prior(counts, output_steps=1)
             self.samples.append(
-                (in_loc, in_cat, in_ts, in_coords, targets, target_mask, valid_input, user_id)
+                (
+                    in_loc,
+                    in_cat,
+                    in_ts,
+                    in_coords,
+                    targets,
+                    target_mask,
+                    valid_input,
+                    history_index,
+                    history_value,
+                    user_id,
+                )
             )
 
     def _append_block_samples(
@@ -105,6 +144,13 @@ class NextPoiSequenceDataset(Dataset):
             if not mask.any():
                 continue
             seen_targets.update(target_positions[mask].tolist())
+            history_indices = []
+            history_values = []
+            for pos in target_positions:
+                counts = np.bincount(loc[:pos], minlength=self.n_pois).astype(np.float32)
+                index, value = self._history_prior(counts, output_steps=1)
+                history_indices.append(index[0])
+                history_values.append(value[0])
             pad = sequence_length - length
             in_loc = np.pad(loc[start:end], (0, pad), constant_values=0)
             in_cat = np.pad(cat[start:end], (0, pad), constant_values=0)
@@ -114,8 +160,29 @@ class NextPoiSequenceDataset(Dataset):
             target_mask = np.pad(mask.astype(np.bool_), (0, pad), constant_values=False)
             valid_input = np.zeros(sequence_length, dtype=np.bool_)
             valid_input[:length] = True
+            history_index = np.pad(
+                np.stack(history_indices),
+                ((0, pad), (0, 0)),
+                constant_values=0,
+            )
+            history_value = np.pad(
+                np.stack(history_values),
+                ((0, pad), (0, 0)),
+                constant_values=0.0,
+            )
             self.samples.append(
-                (in_loc, in_cat, in_ts, in_coords, targets, target_mask, valid_input, user_id)
+                (
+                    in_loc,
+                    in_cat,
+                    in_ts,
+                    in_coords,
+                    targets,
+                    target_mask,
+                    valid_input,
+                    history_index,
+                    history_value,
+                    user_id,
+                )
             )
 
     @classmethod
@@ -126,14 +193,26 @@ class NextPoiSequenceDataset(Dataset):
         sequence_length: int,
         stride: int,
         mode: str = "block_all",
+        history_topk: int = 100,
     ):
-        return cls(read_table(path), split, sequence_length, stride, mode)
+        return cls(read_table(path), split, sequence_length, stride, mode, history_topk)
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
-        loc, cat, ts, coords, target, target_mask, valid_input, user = self.samples[index]
+        (
+            loc,
+            cat,
+            ts,
+            coords,
+            target,
+            target_mask,
+            valid_input,
+            history_index,
+            history_value,
+            user,
+        ) = self.samples[index]
         return {
             "locations": torch.from_numpy(loc),
             "category_ids": torch.from_numpy(cat),
@@ -142,5 +221,7 @@ class NextPoiSequenceDataset(Dataset):
             "targets": torch.from_numpy(target),
             "target_mask": torch.from_numpy(target_mask),
             "valid_input": torch.from_numpy(valid_input),
+            "history_prior_index": torch.from_numpy(history_index),
+            "history_prior_value": torch.from_numpy(history_value),
             "user_id": torch.tensor(user, dtype=torch.long),
         }

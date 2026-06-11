@@ -21,6 +21,8 @@ def evaluate(model, loader, device, save_predictions=False):
             batch["user_id"],
             batch["valid_input"],
             batch.get("category_ids"),
+            batch.get("history_prior_index"),
+            batch.get("history_prior_value"),
         )
         mask = batch["target_mask"]
         flat_logits = logits[mask]

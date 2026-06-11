@@ -77,16 +77,38 @@ class GowallaCanonicalAdapter(DatasetAdapter):
 
 
 class FoursquareTSMCAdapter(DatasetAdapter):
-    """Reads TSMC2014 NYC/Tokyo CSV or TXT files with flexible headers."""
+    """Reads TSMC2014 NYC/Tokyo check-in files.
+
+    The common public release is a tab-separated text file with no header and
+    columns: userId, venueId, venueCategoryId, venueCategory, latitude,
+    longitude, timezoneOffset, utcTimestamp. The adapter also accepts CSV files
+    that already have compatible headers.
+    """
 
     def iter_checkins(self, path: str | Path, chunksize: int = 500_000) -> Iterator[pd.DataFrame]:
         path = Path(path)
         first_line = path.open("rb").readline().decode("latin-1", errors="replace")
         sep = "\t" if first_line.count("\t") >= first_line.count(",") else ","
+        tokens = [token.strip().lower() for token in first_line.strip().split(sep)]
+        looks_headerless = len(tokens) >= 8 and not any(
+            token in {"userid", "user_id", "venueid", "venue_id", "utctimestamp", "timestamp"}
+            for token in tokens
+        )
+        names = None
+        header = "infer"
+        if looks_headerless:
+            header = None
+            names = [
+                "raw_user_id", "raw_poi_id", "venue_category_id", "category",
+                "latitude", "longitude", "timezone_offset", "timestamp",
+            ]
         last_error = None
         for encoding in ("utf-8", "latin-1"):
             try:
-                iterator = pd.read_csv(path, sep=sep, chunksize=chunksize, encoding=encoding)
+                iterator = pd.read_csv(
+                    path, sep=sep, chunksize=chunksize, encoding=encoding,
+                    header=header, names=names, engine="python",
+                )
                 first = next(iter(iterator))
                 for chunk in chain([first], iterator):
                     yield self._normalize(chunk)

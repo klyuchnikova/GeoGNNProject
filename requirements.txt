@@ -6,6 +6,5 @@ PyYAML>=6,<7
 tqdm>=4.66,<5
 matplotlib>=3.8,<4
 pyarrow>=15,<25
-pytest>=8,<9
 # Kaggle already provides a CUDA-enabled build. The notebook skips this line.
 torch>=2.2,<3

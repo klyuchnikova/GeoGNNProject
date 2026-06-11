@@ -7,26 +7,26 @@ data:
   raw_metadata: null
   city: austin
   candidate_cities: []
+  filter_mode: min_only
   min_checkins: 101
   min_poi_visits: 1
+  user_k: 101
+  poi_k: 1
   sequence_length: 20
   sequence_stride: 20
   sequence_mode: block_all
-  split_mode: robust
-  train_ratio: 0.7
-  val_ratio: 0.1
+  split_mode: paper
+  train_ratio: 0.8
+  val_ratio: 0.0
   test_ratio: 0.2
-  output_dir: runs/shared/faithful_rank/processed
-  filter_mode: iterative_kcore
-  user_k: 0
-  poi_k: 0
+  output_dir: runs/shared/austin_original_like/processed
 stkg:
   spatial_mode: rank
   spatial_topk: 50
   spatial_radius_km: 3.0
   spatial_symmetric: true
   include_friendship: true
-  output_dir: runs/shared/faithful_rank/kge
+  output_dir: runs/shared/austin_original_like/kge
 kge:
   embedding_dim: 100
   margin: 1.0
@@ -37,7 +37,12 @@ kge:
   negative_samples: 1
   patience: 15
   sampling: natural
-  checkpoint: runs/shared/faithful_rank/kge/transe_best.pt
+  relation_weights:
+    visits: 0.35
+    temporal: 0.35
+    spatial: 0.2
+    friend: 0.1
+  checkpoint: runs/shared/austin_original_like/kge/transe_best.pt
   device: auto
 graphs:
   transition_topk: 100
@@ -45,7 +50,7 @@ graphs:
   score_chunk_size: 1024
   minimum_score: 0.0
   row_relative_scores: false
-  output_dir: runs/shared/faithful_rank/graphs
+  output_dir: runs/shared/austin_original_like/graphs
 model:
   rnn: rnn
   hidden_dim: 10
@@ -53,7 +58,6 @@ model:
   lambda_s: 1000.0
   learnable_decay: false
   lambda_loc: 1.0
-  lambda_user: 1.0
   use_transition_graph: true
   use_preference_graph: true
   use_spatial_graph: false
@@ -70,7 +74,10 @@ model:
   global_prior_weight: 0.0
   geo_prior_weight: 0.0
   category_transition_weight: 0.0
+  dynamic_graph_prior_weight: 0.0
+  transition_graph_prior_weight: 0.0
   personal_prior_topk: 200
+  dynamic_graph_prior_topk: 100
   recent_prior_tau: 5.0
   geo_prior_scale_km: 5.0
   learnable_prior_weights: false
@@ -86,12 +93,12 @@ train:
   label_smoothing: 0.0
   bpr_weight: 0.0
   repeat_gate_weight: 0.0
-  hard_negatives: 8
+  hard_negatives: 16
   patience: 20
   seed: 42
   device: auto
-  checkpoint_dir: runs/experiments/faithful_rank/checkpoints
-  run_name: faithful_rank
+  checkpoint_dir: runs/experiments/original_like_graph_flashback/checkpoints
+  run_name: original_like_graph_flashback
   checkpoint_metric: MRR
   checkpoint_mode: max
   scheduler_milestones:
@@ -99,6 +106,6 @@ train:
   - 40
   - 60
   - 80
-  scheduler_gamma: 0.2
+  scheduler_gamma: 0.3
   evaluate_test_after_training: true
-artifacts_dir: runs/experiments/faithful_rank/artifacts
+artifacts_dir: runs/experiments/original_like_graph_flashback/artifacts

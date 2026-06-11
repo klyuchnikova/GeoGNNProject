@@ -3,7 +3,7 @@ import argparse, zipfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-DEFAULT=Path('/kaggle/working/graph_flashback_austin_experiments.zip') if Path('/kaggle/working').exists() else ROOT/'graph_flashback_austin_experiments.zip'
+DEFAULT = Path('/kaggle/working/graph_flashback_report_results.zip') if Path('/kaggle/working').exists() else ROOT/'graph_flashback_report_results.zip'
 EXCLUDE_SUFFIX={'.pt','.pth','.ckpt','.npz','.npy'}
 EXCLUDE_PARTS={'__pycache__','.pytest_cache','processed'}
 

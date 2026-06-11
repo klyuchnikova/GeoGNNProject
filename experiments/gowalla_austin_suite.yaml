@@ -1,0 +1,65 @@
+profiles:
+  report:
+    - plain_flashback_min20_20
+    - original_like_graph_flashback
+    - enhanced_graph_flashback_common
+    - enhanced_graph_flashback_min20_20
+    - graph_memory_graph_flashback_min20_20
+  best:
+    - enhanced_graph_flashback_min20_20
+    - graph_memory_graph_flashback_min20_20
+  compact:
+    - plain_flashback_min20_20
+    - enhanced_graph_flashback_min20_20
+    - graph_memory_graph_flashback_min20_20
+
+groups:
+  austin_common:
+    base_config: configs/gowalla_austin_enhanced_common.yaml
+  austin_min20_20:
+    base_config: configs/gowalla_austin_enhanced_min20_20.yaml
+  austin_graph_memory_min20_20:
+    base_config: configs/gowalla_austin_graph_memory_min20_20.yaml
+  austin_plain_min20_20:
+    base_config: configs/gowalla_austin_plain_flashback_min20_20.yaml
+  austin_original_like:
+    base_config: configs/gowalla_austin_original_like.yaml
+
+experiments:
+  plain_flashback_min20_20:
+    group: austin_plain_min20_20
+    label: Plain Flashback, Austin min20/20
+    family: baseline_model
+    overrides: {}
+  original_like_graph_flashback:
+    group: austin_original_like
+    label: Original-like Graph-Flashback, Austin
+    family: original_like
+    overrides: {}
+  enhanced_graph_flashback_common:
+    group: austin_common
+    label: Enhanced Graph-Flashback, Austin common split
+    family: common_protocol
+    overrides: {}
+  enhanced_graph_flashback_min20_20:
+    group: austin_min20_20
+    label: Enhanced Graph-Flashback, Austin min20/20
+    family: filtered_protocol
+    overrides: {}
+  graph_memory_graph_flashback_min20_20:
+    group: austin_graph_memory_min20_20
+    label: Graph-memory Enhanced Graph-Flashback, Austin min20/20
+    family: filtered_protocol
+    overrides: {}
+
+published_reference:
+  Flashback (paper, full Gowalla):
+    Acc@1: 0.1158
+    Acc@5: 0.2754
+    Acc@10: 0.3479
+    MRR: 0.1925
+  Graph-Flashback (paper, full Gowalla):
+    Acc@1: 0.1512
+    Acc@5: 0.3425
+    Acc@10: 0.4256
+    MRR: 0.2422
