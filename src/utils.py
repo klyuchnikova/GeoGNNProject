@@ -31,6 +31,7 @@ class TrainConfig:
     hidden_dim: int = 128
     num_layers: int = 2
     num_heads: int = 4
+    dropout: float = 0.0
     min_user_visits: int = 10
     min_poi_visits: int = 10
     use_kcore: bool = True

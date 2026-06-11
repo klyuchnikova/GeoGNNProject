@@ -9,7 +9,7 @@ class GowallaReader(BaseReader):
         self.city = city.lower()
 
     def load(self) -> pd.DataFrame:
-        path = self.root_dir / f"gowalla_{self.city}_checkins.csv.gz"
+        path = self.root_dir / f"gowalla/gowalla_{self.city}_checkins.csv.gz"
         if not path.exists():
             raise FileNotFoundError(f"Gowalla data not found: {path}")
 
